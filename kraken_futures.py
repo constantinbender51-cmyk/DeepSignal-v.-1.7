@@ -133,6 +133,9 @@ class KrakenFuturesApi:
     def get_notifications(self) -> Dict[str, Any]:
         return self._request("GET", "/derivatives/api/v3/notifications")
 
+    def get_order(self, order_id: str) -> Dict[str, Any]:
+        """Return single order status."""
+        return self._request("GET", "/derivatives/api/v3/orders", {"order_id": order_id})
 
 # ------------------------------------------------------------------
 # quick self-test
