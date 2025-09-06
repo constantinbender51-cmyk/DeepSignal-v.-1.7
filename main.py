@@ -3,8 +3,8 @@ import os
 import json
 import pandas as pd
 from openai import OpenAI
-from kraken_futures import KrakenFuturesApi  # auth + private trade
-from kraken_ohlc import get_ohlc            # reuse existing fetcher
+from kraken_futures import KrakenFuturesApi
+from kraken_ohlc import get_ohlc
 
 SYMBOL   = "XBTUSD"        # spot symbol (use pf_xbtusd for futures)
 INTERVAL = 60              # 1 h
@@ -17,7 +17,10 @@ kraken = KrakenFuturesApi(os.getenv("KRAKEN_FUTURES_KEY"),
 
 def deepseek_signal(df: pd.DataFrame) -> str:
     """Return BUY, SELL, or FLAT."""
-    last_50 = df.tail(50).reset_index().to_dict(orient="records")
+    last_50 = (df.tail(50)
+                 .reset_index()
+                 .assign(time=lambda d: d['time'].astype('int64')//1_000_000_000)  # unix s
+              ).to_dict(orient="records")
     prompt = (f"You are a crypto strategist.  Last 50 1-h candles:\n"
               f"{json.dumps(last_50)}\n"
               f"Reply ONLY the word BUY, SELL, or FLAT for next hour.")
@@ -27,11 +30,8 @@ def deepseek_signal(df: pd.DataFrame) -> str:
     return resp.choices[0].message.content.strip().upper()
 
 if __name__ == "__main__":
-    import pandas as pd
-    import time
-
     df = get_ohlc(SYMBOL, INTERVAL)
     signal = deepseek_signal(df)
-
     from execute import execute_trade
     execute_trade(signal, SIZE_BTC)
+
