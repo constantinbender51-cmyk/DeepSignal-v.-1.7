@@ -41,6 +41,9 @@ def deepseek_signal(df: pd.DataFrame) -> tuple[str, float, float]:
     action = parts["ACTION"]
     stop   = float(parts["STOP"])
     target = float(parts["TARGET"])
+    if action == "FLAT":
+       action = ("BUY", "SELL")[int(time.time()) % 2]   # flip-flop
+    
     return action, stop, target
     
 if __name__ == "__main__":
