@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import json
+import pandas as pd
 from openai import OpenAI
 from kraken_futures import KrakenFuturesApi  # auth + private trade
 from kraken_ohlc import get_ohlc            # reuse existing fetcher
