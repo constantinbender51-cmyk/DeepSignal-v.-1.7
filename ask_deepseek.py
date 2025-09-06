@@ -1,3 +1,4 @@
+import os
 from openai import OpenAI   # 1.0+ interface
 
 client = OpenAI(
