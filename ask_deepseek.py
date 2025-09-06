@@ -1,12 +1,14 @@
-#!/usr/bin/env python3
-import os, openai
-openai.api_key = os.getenv("DEEPSEEK_API_KEY")
-openai.api_base = "https://api.deepseek.com/v1"
-with open("deepseek_prompt.txt") as f:
-    question = f.read().strip()
-r = openai.ChatCompletion.create(
+from openai import OpenAI   # 1.0+ interface
+
+client = OpenAI(
+    api_key=os.getenv("DEEPSEEK_API_KEY"),
+    base_url="https://api.deepseek.com/v1"   # DeepSeek is OpenAI-compatible
+)
+
+completion = client.chat.completions.create(
     model="deepseek-chat",
-    messages=[{"role": "user", "content": question}],
+    messages=[{"role": "user", "content": "what is the colour of love?"}],
     temperature=0.7
 )
-print(r.choices[0].message.content)
+
+print(completion.choices[0].message.content)
