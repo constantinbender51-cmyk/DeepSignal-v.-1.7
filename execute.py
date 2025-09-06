@@ -37,11 +37,21 @@ def place_bracket(action: str, size: float, stop: float, target: float):
         print("Entry failed:", order)
         return
     # 2) immediately attach stop/target via edit (Kraken supports it)
+    # inside place_bracket after send_order
     oid = order["sendStatus"]["order_id"]
+
+    # poll until filled (or use websocket later)
+    while True:
+        status = kraken.get_orders(order_id=oid)
+        if status["orders"][0]["status"] == "filled":
+            break
+        time.sleep(1)
+
+    # now attach bracket
     kraken.edit_order({
         "order_id": oid,
-        "stopLoss": stop,
-        "takeProfit": target,
+        "stopLoss":   stop,   # -1
+        "takeProfit": target  # +2
     })
     print("Bracket attached.")
 
