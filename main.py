@@ -35,7 +35,8 @@ def deepseek_signal(df: pd.DataFrame) -> tuple[str, float, float]:
         temperature=0
     )
 
-    raw   = resp.choices[0].message.content.strip()
+    raw = resp.choices[0].message.content.strip()
+    print("RAW LLM:", repr(raw))          # <-- add this line
     parts = {k: v for k, v in (x.split(",") for x in raw.split(";"))}
     action = parts["ACTION"]
     stop   = float(parts["STOP"])
