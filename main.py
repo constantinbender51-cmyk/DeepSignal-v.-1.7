@@ -2,6 +2,7 @@
 import os
 import json
 import pandas as pd
+import time
 from openai import OpenAI
 from kraken_futures import KrakenFuturesApi
 from kraken_ohlc import get_ohlc
