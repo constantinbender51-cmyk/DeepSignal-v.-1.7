@@ -50,5 +50,5 @@ def deepseek_signal(df: pd.DataFrame) -> tuple[str, float, float]:
 if __name__ == "__main__":
     df = get_ohlc(SYMBOL, INTERVAL)
     signal, stop, target = deepseek_signal(df)
-    from execute import place_bracket
-    place_bracket(signal, SIZE_BTC, stop, target)
+    from execute import add_slice
+    add_slice(signal, stop, target)
