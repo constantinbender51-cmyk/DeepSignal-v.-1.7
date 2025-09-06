@@ -1,1 +1,1 @@
-worker: python kraken_ohlc.py XBTUSD 60
+worker: python ask_deepseek.py
