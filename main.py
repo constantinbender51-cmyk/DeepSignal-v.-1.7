@@ -44,7 +44,7 @@ def deepseek_signal(df: pd.DataFrame) -> tuple[str, float, float]:
     
 if __name__ == "__main__":
     df = get_ohlc(SYMBOL, INTERVAL)
-    signal = deepseek_signal(df)
+    signal, stop, target = deepseek_signal(df)
     from execute import execute_trade
     execute_trade(signal, SIZE_BTC)
 
