@@ -70,7 +70,7 @@ def run():
         else:
             print(f"manage: ❌ (still open)")
             
-        if len(trades) >= 1000:
+        if len(trades) >= 10:
             break
 
     pd.DataFrame(trades).to_csv(OUT_PATH, index=False)
