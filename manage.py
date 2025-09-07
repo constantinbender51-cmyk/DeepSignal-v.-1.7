@@ -11,7 +11,7 @@ def check_all_triggers():
             t = json.load(f)
         # use *current* mark price for every slice
         tick = kraken.get_tickers()                      # whole response
-        rec  = next(t for t in tick["tickers"] if t["symbol"] == "pf_xbtusd")
+        rec  = next(t for t in tick["tickers"] if t["symbol"] == "PF_XBTUSD")
         mark = float(rec["markPrice"])
 
         side, stop, tgt = t["side"], t["stop"], t["target"]
