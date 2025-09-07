@@ -2,6 +2,7 @@
 import json
 import openai
 from typing import Tuple
+import os 
 
 client = openai.OpenAI(
     api_key=os.getenv("DEEPSEEK_API_KEY"),
