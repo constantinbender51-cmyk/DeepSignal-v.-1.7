@@ -43,6 +43,9 @@ def run_manage():
 # ---- main loop: hourly signal + a few seconds ----
 if __name__ == "__main__":
     threading.Thread(target=run_manage, daemon=True).start()
+    df = get_ohlc(SYMBOL, INTERVAL)
+    signal, stop, target = deepseek_signal(df)
+    add_slice(signal, stop, target)
 
     while True:
         now = time.time()
