@@ -28,11 +28,6 @@ def check_all_triggers():
             print(f"Slice {file} hit  mark={mark}")
 
 if __name__ == "__main__":
-    # ---- sanity-check on deploy ----
-    print("=== Kraken getTickers() at deploy ===")
-    print(kraken.get_tickers())
-    print("=====================================")
-
     while True:
         check_all_triggers()
         time.sleep(10)
