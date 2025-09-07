@@ -76,6 +76,10 @@ def run():
 
     pd.DataFrame(trades).to_csv(OUT, index=False)
     print("Compound back-test done:", OUT)
+    # Print the contents of the generated CSV for verification
+    if os.path.exists(OUT):
+        print("\nContents of the generated CSV:")
+        print(pd.read_csv(OUT))
 
 if __name__ == "__main__":
     run()
