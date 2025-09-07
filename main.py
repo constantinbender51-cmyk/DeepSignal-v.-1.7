@@ -4,7 +4,6 @@ from openai import OpenAI
 from kraken_futures import KrakenFuturesApi
 from kraken_ohlc import get_ohlc
 from execute import add_slice
-import time
 import threading
 
 # ---------- config ----------
