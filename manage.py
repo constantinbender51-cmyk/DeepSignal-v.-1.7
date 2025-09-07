@@ -10,8 +10,9 @@ def check_all_triggers():
         with open(file) as f:
             t = json.load(f)
         # use *current* mark price for every slice
-        tick = kraken.get_tickers()
-        mark = float(next(x for x in tick["tickers"] if x["symbol"] == "pf_xbtusd")["markPrice"])
+        tick = kraken.get_tickers()                      # whole response
+        rec  = next(t for t in tick["tickers"] if t["symbol"] == "pf_xbtusd")
+        mark = float(rec["markPrice"])
 
         side, stop, tgt = t["side"], t["stop"], t["target"]
         # crude pct move since file birth (we don’t store entry)
