@@ -1,68 +1,40 @@
-#!/usr/bin/env python3
-import os, json, pandas as pd, time
-from openai import OpenAI
+# main.py  (live entry-point)
+import os, time, json, pandas as pd, threading
+from datetime import datetime, timedelta
 from kraken_futures import KrakenFuturesApi
 from kraken_ohlc import get_ohlc
+from deepseek_signal import get_signal          # shared module
 from execute import add_slice
-import threading
 
-# ---------- config ----------
-SYMBOL   = "XBTUSD"
-INTERVAL = 60
-SIZE_BTC = 0.0001
-# ----------------------------
+SYMBOL, INTERVAL, SIZE_BTC = "XBTUSD", 60, 0.0001
 
-client = OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"),
-                base_url="https://api.deepseek.com/v1")
-kraken = KrakenFuturesApi(os.getenv("KRAKEN_FUTURES_KEY"),
+client = KrakenFuturesApi(os.getenv("KRAKEN_FUTURES_KEY"),
                           os.getenv("KRAKEN_FUTURES_SECRET"))
 
-# ---- signal generation ----
-def deepseek_signal(df: pd.DataFrame) -> tuple[str, float, float]:
-    last_50 = (df.tail(50)
-                 .reset_index()
-                 .assign(time=lambda d: d['time'].astype('int64')//1_000_000_000)
-              ).to_dict(orient="records")
-    prompt = (
-        f"You are a crypto strategist.  Last 50 1-h candles:\n{json.dumps(last_50)}\n"
-        'Reply JSON only: {"action":"BUY"|"SELL"|"FLAT","stop":-1,"target":2}'
-    )
-    resp = client.chat.completions.create(model="deepseek-chat",
-                                          messages=[{"role": "user", "content": prompt}],
-                                          temperature=0)
-    raw = resp.choices[0].message.content.strip()
-    raw = raw.removeprefix("```json").removesuffix("```").strip()  # py 3.9+
-    print("RAW LLM:", repr(raw))
-    if not raw:
-        return "FLAT", 0.0, 0.0
-    try:
-        obj = json.loads(raw)
-    except json.JSONDecodeError:
-        return "FLAT", 0.0, 0.0
-
-    return obj["action"], float(obj["stop"]), float(obj["target"])
-
-# ---- 10-s position babysitter ----
+# ---- 10-s trigger babysitter (unchanged) ----
 def run_manage():
-    from manage import check_all_triggers          # local import to avoid circular
+    from manage import check_all_triggers
     while True:
         check_all_triggers()
         time.sleep(10)
 
-# ---- main loop: hourly signal + a few seconds ----
-if __name__ == "__main__":
-    threading.Thread(target=run_manage, daemon=True).start()
-    df = get_ohlc(SYMBOL, INTERVAL)
-    signal, stop, target = deepseek_signal(df)
-    add_slice(signal, stop, target)
-
+# ---- hourly signal ----
+def live_loop():
     while True:
-        now = time.time()
         # wait until next hour + 5 s
-        next_hour = (int(now) // 3600 + 1) * 3600 + 5
-        time.sleep(max(0, next_hour - now))
+        now = time.time()
+        next_bar = (int(now) // 3600 + 1) * 3600 + 5
+        time.sleep(max(0, next_bar - now))
 
         df = get_ohlc(SYMBOL, INTERVAL)
-        signal, stop, target = deepseek_signal(df)
-        add_slice(signal, stop, target)
-      
+        last_50 = (df.tail(50)
+                     .reset_index()
+                     .assign(time=lambda d: d['time'].astype('int64')//1_000_000_000)
+                  ).to_dict(orient="records")
+
+        action, stop, target = get_signal(last_50)   # same func as back-test
+        add_slice(action, stop, target)              # logs UID + bracket
+
+if __name__ == "__main__":
+    threading.Thread(target=run_manage, daemon=True).start()
+    live_loop()
