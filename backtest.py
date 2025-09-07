@@ -2,6 +2,7 @@
 import pandas as pd
 import json
 import random
+import os
 from datetime import timedelta
 from deepseek_signal import get_signal
 
