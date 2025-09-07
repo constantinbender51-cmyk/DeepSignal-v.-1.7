@@ -31,6 +31,7 @@ def deepseek_signal(df: pd.DataFrame) -> tuple[str, float, float]:
                                           messages=[{"role": "user", "content": prompt}],
                                           temperature=0)
     raw = resp.choices[0].message.content.strip()
+    raw = raw.removeprefix("```json").removesuffix("```").strip()  # py 3.9+
     print("RAW LLM:", repr(raw))
     if not raw:
         return "FLAT", 0.0, 0.0
