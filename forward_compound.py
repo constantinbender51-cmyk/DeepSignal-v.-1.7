@@ -17,8 +17,8 @@ class Slice:
 
 def bar_exit(bar: Dict, slc: Slice) -> tuple:
     """Return (exit_px, hit_stop_bool) if tripped, else (None,None)"""
-    stop_px  = slc.entry_px * (1 + slc.stop/100) if slc.side=="long" else slc.entry_px * (1 - slc.stop/100)
-    tgt_px   = slc.entry_px * (1 + slc.target/100) if slc.side=="long" else slc.entry_px * (1 - slc.target/100)
+    stop_px  = slc.entry_px * (1 + slc.stop/100) if slc.side=="buy" else slc.entry_px * (1 - slc.stop/100)
+    tgt_px   = slc.entry_px * (1 + slc.target/100) if slc.side=="buy" else slc.entry_px * (1 - slc.target/100)
     if slc.side=="long":
         if bar["low"] <= stop_px:  return stop_px - SLIP, True
         if bar["high"]>= tgt_px:   return tgt_px + SLIP, False
@@ -28,7 +28,7 @@ def bar_exit(bar: Dict, slc: Slice) -> tuple:
     return None, None
 
 def net_pos(slices: List[Slice]) -> float:
-    return sum(SIZE * (1 if s.side=="long" else -1) for s in slices)
+    return sum(SIZE * (1 if s.side=="buy" else -1) for s in slices)
 
 def run():
     df = pd.read_csv(CSV, parse_dates=["open_time"]).rename(columns={"open_time":"time"})
@@ -46,7 +46,7 @@ def run():
         for slc in slices:
             exit_px, hit_stop = bar_exit(bar, slc)
             if exit_px:
-                pnl_pct = (exit_px - slc.entry_px)/slc.entry_px * (1 if slc.side=="long" else -1) - FEE*2
+                pnl_pct = (exit_px - slc.entry_px)/slc.entry_px * (1 if slc.side=="buy" else -1) - FEE*2
                 trades.append({
                     "uid":slc.uid,"open_t":candles[slc.birth_idx]["time"],"close_t":bar["time"],
                     "side":slc.side,"entry":slc.entry_px,"exit":exit_px,"hit_stop":hit_stop,"pnl_pct":pnl_pct
