@@ -41,16 +41,22 @@ def run():
         if i < 50:  # warm-up
             continue
         
+        # Progress indicator
+        print(f"candle: {i+1}/{len(candles)}", end="\r")
+        
         last_50 = [dict(time=c["time"].timestamp(), o=c["open"], h=c["high"],
                         l=c["low"], c=c["close"], v=c["volume"])
                    for c in candles[i-50:i]]
         action, stop, target = get_signal(last_50)
+        print(f"signal: {'✔️' if action != 'FLAT' else '❌'}", end=" ")
         
         if action == "FLAT":
+            print()  # New line for FLAT signals
             continue
 
         entry_px = cand["open"] * (1 + 5/3600/100)  # 5 sec slippage
         exit_px, exit_time, hit_stop = bar_exit(cand, action.lower(), stop, target, entry_px)
+        print(f"execution: ✔️", end=" ")
 
         if exit_px:  # closed same bar
             pnl_pct = (exit_px - entry_px) / entry_px * (1 if action == "BUY" else -1) - FEE
@@ -60,10 +66,9 @@ def run():
                 "stop": stop, "target": target, "hit_stop": hit_stop,
                 "pnl_pct": pnl_pct
             })
-            
-        # Single print line per iteration
-        status_line = f"candle: {i+1}/69000, signal: ✔️, execution: ✔️, manage: {'✔️' if exit_px else '❌'}"
-        print(status_line)
+            print(f"manage: ✔️ (stop: {'✔️' if hit_stop else '❌'})")
+        else:
+            print(f"manage: ❌ (still open)")
             
         if len(trades) >= 1000:
             break
