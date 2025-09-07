@@ -30,7 +30,15 @@ def deepseek_signal(df: pd.DataFrame) -> tuple[str, float, float]:
     resp = client.chat.completions.create(model="deepseek-chat",
                                           messages=[{"role": "user", "content": prompt}],
                                           temperature=0)
-    obj = json.loads(resp.choices[0].message.content.strip())
+    raw = resp.choices[0].message.content.strip()
+    print("RAW LLM:", repr(raw))
+    if not raw:
+        return "FLAT", 0.0, 0.0
+    try:
+        obj = json.loads(raw)
+    except json.JSONDecodeError:
+        return "FLAT", 0.0, 0.0
+
     return obj["action"], float(obj["stop"]), float(obj["target"])
 
 # ---- 10-s position babysitter ----
