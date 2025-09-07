@@ -30,8 +30,10 @@ def bar_exit(bar: pd.Series, side: str, stop: float, target: float, entry_px: fl
     return None, None, None  # still open
 
 def run():
-    df = pd.read_csv(CSV_PATH, parse_dates=["time"])
-    candles = df.to_dict("records")
+    df = pd.read_csv(CSV_PATH, parse_dates=["open_time"])
+    df = df.rename(columns={"open_time": "time"})   # unify name
+    candles = df[["time", "open", "high", "low", "close", "volume"]].to_dict("records")
+
     random.shuffle(candles)
 
     trades = []
