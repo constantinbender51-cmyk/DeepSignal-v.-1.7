@@ -40,10 +40,12 @@ def run():
     for i, cand in enumerate(candles):
         if i < 50:  # warm-up
             continue
+        
         last_50 = [dict(time=c["time"].timestamp(), o=c["open"], h=c["high"],
                         l=c["low"], c=c["close"], v=c["volume"])
                    for c in candles[i-50:i]]
         action, stop, target = get_signal(last_50)
+        
         if action == "FLAT":
             continue
 
@@ -58,6 +60,11 @@ def run():
                 "stop": stop, "target": target, "hit_stop": hit_stop,
                 "pnl_pct": pnl_pct
             })
+            
+        # Single print line per iteration
+        status_line = f"candle: {i+1}/69000, signal: ✔️, execution: ✔️, manage: {'✔️' if exit_px else '❌'}"
+        print(status_line)
+            
         if len(trades) >= 1000:
             break
 
