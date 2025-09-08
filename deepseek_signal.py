@@ -11,7 +11,7 @@ client = openai.OpenAI(
 
 def get_signal(last_50: list) -> Tuple[str, float, float]:
     prompt = (
-        "You are a crypto strategist. Use indicators, either Fibonacci retracement+RSI+MACD or Stochastic Oscillator + Williams %R or EMA+SMA. Set the stop and target to a specific price level, 0.5 - 1 × ATR, 2 × SL, or above/below support/resistance levels. If unsure FLAT, 0.0, 0.0, <str>. After 24 hours the trade will be automatically closed. Last 50 1-h candles:\n"
+        "You are a crypto strategist. Use indicators, either Fibonacci retracement+RSI+MACD or Stochastic Oscillator + Williams %R or EMA+SMA. Set stop and target to a specific percent from the mark price, eg. 0.5, 1.0 or 4.0, 6.2. If unsure FLAT, 0.0, 0.0, <str>. If no stop or target has been triggered After 24 hours the trade will be automatically closed. Last 50 1-h candles:\n"
         f"{json.dumps(last_50)}\n"
         'Reply JSON only: {"action":"BUY"|"SELL"|"FLAT","stop":<pct>,"target":<pct>,"reason":<str>}'
     )
