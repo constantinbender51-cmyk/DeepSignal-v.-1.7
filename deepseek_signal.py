@@ -28,4 +28,4 @@ def get_signal(last_50: list) -> Tuple[str, float, float]:
         obj = json.loads(raw)
     except json.JSONDecodeError:
         return "FLAT", 0.0, 0.0
-    return obj["action"], float(obj["stop"]), float(obj["target"])
+    return obj["action"], float(obj["stop"]), float(obj["target"], obj["reason"])
