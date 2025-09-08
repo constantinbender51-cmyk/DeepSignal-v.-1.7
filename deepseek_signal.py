@@ -11,7 +11,7 @@ client = openai.OpenAI(
 
 def get_signal(last_50: list) -> Tuple[str, float, float]:
     prompt = (
-        "You are a crypto strategist. Request indicators in the reason key. Last 50 1-h candles:\n"
+        "You are a crypto strategist. Use indicators. BUY/SELL will trigger a market order of size 1% of capital. If unsure FLAT. Last 50 1-h candles:\n"
         f"{json.dumps(last_50)}\n"
         'Reply JSON only: {"action":"BUY"|"SELL"|"FLAT","stop":<pct>,"target":<pct>,"reason":<str>}'
     )
