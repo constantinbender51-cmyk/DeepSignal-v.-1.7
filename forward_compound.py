@@ -112,7 +112,7 @@ def run():
             avg = sum(t["pnl_pct"] for t in trades) / closed_cnt
             print(f"---- expectancy after {closed_cnt} slices: {avg:.3%} ----")
 
-        if closed_cnt >= 60:  # full target
+        if closed_cnt >= 400:  # full target
             break
 
     pd.DataFrame(trades).to_csv(OUT, index=False)
