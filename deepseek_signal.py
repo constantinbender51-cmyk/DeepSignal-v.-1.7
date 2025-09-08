@@ -297,7 +297,27 @@ def _build_indicator_payload(ohlc: List[Dict[str, float]]) -> Dict[str, Any]:
 # ------------------------------------------------------------------
 # Original API – unchanged signature
 # ------------------------------------------------------------------
-def get_signal(last_50: list) -> Tuple[str, float, float]:
+def get_signal(last_50: list | pd.DataFrame) -> Tuple[str, float, float]:
+    """
+    last_50 can be:
+      - list[dict]  – old style, keys: time/o/h/l/c/v
+      - pd.DataFrame – new style, columns: time/open/high/low/close/volume
+    """
+    # 1. normalise to list[dict] -------------------------------------------------
+    if isinstance(last_50, pd.DataFrame):
+        # convert the dataframe that forward_compound creates
+        last_50 = [
+            {
+                "time":  int(r["time"].timestamp()),
+                "o":     float(r["open"]),
+                "h":     float(r["high"]),
+                "l":     float(r["low"]),
+                "c":     float(r["close"]),
+                "v":     float(r["volume"]),
+            }
+            for _, r in last_50.iterrows()
+        ]
+
     last_20 = last_50[-20:] if len(last_50) >= 20 else last_50
     indicators = _build_indicator_payload(last_20)
 
