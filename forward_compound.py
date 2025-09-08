@@ -19,7 +19,7 @@ def bar_exit(bar: Dict, slc: Slice) -> tuple:
     """Return (exit_px, hit_stop_bool) if tripped, else (None,None)"""
     stop_px  = slc.entry_px * (1 + slc.stop/100) if slc.side=="buy" else slc.entry_px * (1 - slc.stop/100)
     tgt_px   = slc.entry_px * (1 + slc.target/100) if slc.side=="buy" else slc.entry_px * (1 - slc.target/100)
-    if slc.side=="long":
+    if slc.side=="buy":
         if bar["low"] <= stop_px:  return stop_px - SLIP, True
         if bar["high"]>= tgt_px:   return tgt_px + SLIP, False
     else:
