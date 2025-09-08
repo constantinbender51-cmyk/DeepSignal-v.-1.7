@@ -11,7 +11,7 @@ client = openai.OpenAI(
 
 def get_signal(last_50: list) -> Tuple[str, float, float]:
     prompt = (
-        "You are a crypto strategist. Use indicators, trade on Fibonacci retracement. BUY/SELL will trigger a market order of size 1% of capital. If unsure FLAT, 0.0, 0.0, <str>. After 24 hours the trade will be automatically closed. Last 50 1-h candles:\n"
+        "You are a crypto strategist. Use indicators, trade on Fibonacci retracement + RSI + MACD. BUY/SELL will trigger a market order of size 1% of capital. Choose your stop and target dynamically. If unsure FLAT, 0.0, 0.0, <str>. After 24 hours the trade will be automatically closed. Last 50 1-h candles:\n"
         f"{json.dumps(last_50)}\n"
         'Reply JSON only: {"action":"BUY"|"SELL"|"FLAT","stop":<pct>,"target":<pct>,"reason":<str>}'
     )
