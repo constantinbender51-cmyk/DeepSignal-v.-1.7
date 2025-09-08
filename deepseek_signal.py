@@ -11,9 +11,9 @@ client = openai.OpenAI(
 
 def get_signal(last_50: list) -> Tuple[str, float, float]:
     prompt = (
-        "You are a crypto strategist. Use indicators, either Fibonacci retracement+RSI+MACD or Stochastic Oscillator + Williams %R or EMA+SMA. Set stop and target to a specific percent from the mark price, eg. 0.5, 1.0 or 4.0, 6.2. If unsure FLAT, 0.0, 0.0, <str>. If no stop or target has been triggered After 24 hours the trade will be automatically closed. Last 50 1-h candles:\n"
+        "You are a crypto strategist. If unsure, FLAT, 0.0, 0.0, <string>. If no stop or target has been triggered after 24 hours, the trade will be automatically closed. Last 50 1-h candles:\n"
         f"{json.dumps(last_50)}\n"
-        'Reply JSON only: {"action":"BUY"|"SELL"|"FLAT","stop":<pct>,"target":<pct>,"reason":<str>}'
+        'Reply JSON only: {"action":"BUY"|"SELL"|"FLAT","stop":<percent>,"target":<percent>,"reason":<string>}'
     )
     resp = client.chat.completions.create(
         model="deepseek-chat",
