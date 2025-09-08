@@ -14,6 +14,7 @@ def get_signal(last_50: list) -> Tuple[str, float, float]:
         "You are a crypto strategist. Last 50 1-h candles:\n"
         f"{json.dumps(last_50)}\n"
         'Reply JSON only: {"action":"BUY"|"SELL"|"FLAT","stop":<pct>,"target":<pct>}'
+        "This is a test run, select action at random and 3 % stop and 5 % target."
     )
     resp = client.chat.completions.create(
         model="deepseek-chat",
