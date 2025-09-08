@@ -11,9 +11,9 @@ client = openai.OpenAI(
 
 def get_signal(last_50: list) -> Tuple[str, float, float]:
     prompt = (
-        "You are a crypto strategist. Generate a signal based on OHLC. Specify stop distance and target distance in percent for buy and sell orders. Consider support and resistance levels. Last 50 1-h candles:\n"
+        "You are a crypto strategist. Last 50 1-h candles:\n"
         f"{json.dumps(last_50)}\n"
-        'Reply JSON only: {"action":"BUY"|"SELL"|"FLAT","stop":<pct>,"target":<pct>}'
+        'Reply JSON only: {"action":"BUY"|"SELL"|"FLAT","stop":<pct>,"target":<pct>,"reason":<str>}'
     )
     resp = client.chat.completions.create(
         model="deepseek-chat",
