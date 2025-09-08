@@ -81,5 +81,29 @@ def run():
         print("\nContents of the generated CSV:")
         print(pd.read_csv(OUT))
 
+    df_trades = pd.DataFrame(trades)
+
+    pnl = df_trades["pnl_pct"]
+    win      = pnl[pnl > 0]
+    loss     = pnl[pnl <= 0]
+    wr       = len(win) / len(pnl)
+    exp      = wr * win.mean() + (1 - wr) * loss.mean()
+    median   = pnl.median()
+    shar     = pnl.mean() / pnl.std() if pnl.std() else 0
+    max_up   = pnl.max()
+    max_down = pnl.min()
+
+    print("\n==========  BACK-TEST SUMMARY  ==========")
+    print(f"trades     : {len(df_trades)}")
+    print(f"win rate   : {wr:.1%}")
+    print(f"avg win    : {win.mean():.2%}")
+    print(f"avg loss   : {loss.mean():.2%}")
+    print(f"expectancy : {exp:.2%}")
+    print(f"median pnl : {median:.2%}")
+    print(f"shar (trades): {shar:.2f}")
+    print(f"biggest +  : {max_up:.2%}")
+    print(f"biggest –  : {max_down:.2%}")
+    print("=========================================")
+
 if __name__ == "__main__":
     run()
