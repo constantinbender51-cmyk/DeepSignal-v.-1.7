@@ -19,6 +19,9 @@ def get_signal(last_50: list) -> Tuple[str, float, float]:
         model="deepseek-chat",
         messages=[{"role": "user", "content": prompt}],
         temperature=0
+        response_format={
+            'type': 'json_object'
+        }
     )
     raw = resp.choices[0].message.content.strip()
     raw = raw.removeprefix("```json").removesuffix("```").strip()
