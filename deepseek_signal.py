@@ -31,4 +31,7 @@ def get_signal(last_50: list) -> Tuple[str, float, float]:
         obj = json.loads(raw)
     except json.JSONDecodeError:
         return "FLAT", 0.0, 0.0
+    if obj["stop"] is None or obj["target"] is None:
+        print("nontype response",raw);
+        
     return obj["action"], float(obj["stop"]), float(obj["target"]), obj["reason"]
