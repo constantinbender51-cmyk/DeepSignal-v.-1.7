@@ -10,10 +10,15 @@ FEE   = 0.00035          # half round-trip per side
 SLIP  = 0.0001
 
 class Slice:
-    __slots__ = ("uid", "side", "entry_px", "stop", "target", "birth_idx")
-    def __init__(self, side: str, entry: float, stop: float, target: float, idx: int):
-        self.uid, self.side, self.entry_px, self.stop, self.target, self.birth_idx = \
-            str(uuid.uuid4())[:6], side, entry, stop, target, idx
+    __slots__ = ("uid", "side", "entry_px", "stop", "target", "birth_idx", "entry_time")
+    def __init__(self, side: str, entry: float, stop: float, target: float, idx: int, entry_time):
+        self.uid, self.side, self.entry_px, self.stop, self.target, self.birth_idx, self.entry_time = \
+            str(uuid.uuid4())[:6], side, entry, stop, target, idx, entry_time
+
+def time_exit(bar: Dict, slc: Slice, max_hours: int = 24) -> bool:
+    """True -> close the slice because 24 h have passed"""
+    # bar['time'] and slc.entry_time are pandas.Timestamp objects
+    return (bar['time'] - slc.entry_time).total_seconds() / 3600 >= max_hours
 
 def bar_exit(bar: Dict, slc: Slice) -> tuple:
     """Return (exit_px, hit_stop_bool) if tripped, else (None,None)"""
@@ -39,30 +44,42 @@ def run():
     closed_cnt = 0
 
     for idx in range(start, len(candles)):
-        bar = candles[idx]
+    bar = candles[idx]
 
-        # ---------- exit checks (lose-first) ----------
-        exits = []
-        for slc in slices:
-            exit_px, hit_stop = bar_exit(bar, slc)
-            if exit_px:
-                pnl_pct = (exit_px - slc.entry_px)/slc.entry_px * (1 if slc.side=="buy" else -1) - FEE*2
-                trades.append({
-                    "uid":slc.uid,"open_t":candles[slc.birth_idx]["time"],"close_t":bar["time"],
-                    "side":slc.side,"entry":slc.entry_px,"exit":exit_px,"hit_stop":hit_stop,"pnl_pct":pnl_pct
-                })
-                exits.append(slc)
-        for slc in exits:  slices.remove(slc)
-        closed_cnt += len(exits)
+    # ---------- exit checks ----------
+    exits = []
+    for slc in slices:
+        # 3a. normal price exit
+        exit_px, hit_stop = bar_exit(bar, slc)
+        # 3b. time exit
+        if exit_px is None and time_exit(bar, slc):
+            # close at open of this bar (or mid, or whatever you prefer)
+            exit_px = bar['open']
+            hit_stop = None          # mark as time-out
+        if exit_px:                  # either price or time closed the slice
+            pnl_pct = (exit_px - slc.entry_px)/slc.entry_px * (1 if slc.side=="buy" else -1) - FEE*2
+            trades.append({
+                "uid":slc.uid,
+                "open_t":candles[slc.birth_idx]["time"],
+                "close_t":bar["time"],
+                "side":slc.side,
+                "entry":slc.entry_px,
+                "exit":exit_px,
+                "hit_stop":hit_stop if hit_stop is not None else "time",
+                "pnl_pct":pnl_pct
+            })
+            exits.append(slc)
+    for slc in exits:
+        slices.remove(slc)
+    closed_cnt += len(exits)
 
-        # ---------- new signal ----------
-        last50 = [dict(time=c["time"].timestamp(),o=c["open"],h=c["high"],l=c["low"],c=c["close"],v=c["volume"])
-                  for c in candles[idx-50:idx]]
-        action, stop, target = get_signal(last50)
-        print("Action: ", action, "stop: ", stop, "target:", target);
-        if action != "FLAT":
-            entry = bar["open"] * (1 + 5/3600/100)   # 5-sec slip
-            slices.append(Slice(action.lower(), entry, stop, target, idx))
+    # ---------- new signal ----------
+    last50 = [dict(time=c["time"].timestamp(),o=c["open"],h=c["high"],l=c["low"],c=c["close"],v=c["volume"])
+              for c in candles[idx-50:idx]]
+    action, stop, target = get_signal(last50)
+    if action != "FLAT":
+        entry = bar["open"] * (1 + 5/3600/100)
+        slices.append(Slice(action.lower(), entry, stop, target, idx, bar["time"]))
 
         # ---------- logging ----------
         if idx % 100 == 0 or exits:
