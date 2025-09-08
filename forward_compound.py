@@ -56,9 +56,9 @@ def run():
         closed_cnt += len(exits)
 
         # ---------- new signal ----------
-        last50 = [dict(time=c["time"].timestamp(),o=c["open"],h=c["high"],l=c["low"],c=c["close"],v=c["volume"])
-                  for c in candles[idx-50:idx]]
+        last50 = df.iloc[idx-50:idx]          # already a DataFrame
         action, stop, target = get_signal(last50)
+
         print("Action: ", action, "stop: ", stop, "target:", target);
         if action != "FLAT":
             entry = bar["open"] * (1 + 5/3600/100)   # 5-sec slip
