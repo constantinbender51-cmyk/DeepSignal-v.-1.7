@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import time
 
 def load_and_process_data():
     """Load and process the CSV data with proper ISO8601 parsing"""
@@ -131,7 +132,7 @@ def simulate_trading(df, bullish_signals, bearish_signals):
     return trades
 
 def print_trade_results(trades):
-    """Print trade results and summary statistics"""
+    """Print trade results and summary statistics with 0.5 second delay between trades"""
     if not trades:
         print("No trades were executed.")
         return
@@ -139,6 +140,8 @@ def print_trade_results(trades):
     print("=" * 100)
     print("TRADE RESULTS - 200-DAY SMA CROSSOVER STRATEGY")
     print("=" * 100)
+    print("Printing trades with 0.5 second delay...")
+    print()
     
     total_pnl = 0
     winning_trades = 0
@@ -146,14 +149,19 @@ def print_trade_results(trades):
     total_duration = 0
     
     for i, trade in enumerate(trades, 1):
+        # Add 0.5 second delay before printing each trade
+        time.sleep(0.5)
+        
         pnl_sign = "+" if trade['pnl_pct'] >= 0 else ""
         trade_direction = "LONG" if trade['type'] == 'long_close' else "SHORT"
+        pnl_color = "\033[92m" if trade['pnl_pct'] >= 0 else "\033[91m"  # Green for profit, red for loss
+        reset_color = "\033[0m"
         
         print(f"Trade {i}: {trade_direction}")
         print(f"  Entry:    {trade['entry_time']} @ ${trade['entry_price']:.2f}")
         print(f"  Exit:     {trade['exit_time']} @ ${trade['exit_price']:.2f}")
         print(f"  Duration: {trade['duration_days']:.1f} days")
-        print(f"  PnL:      {pnl_sign}{trade['pnl_pct']:.2f}%")
+        print(f"  PnL:      {pnl_color}{pnl_sign}{trade['pnl_pct']:.2f}%{reset_color}")
         print("-" * 60)
         
         total_pnl += trade['pnl_pct']
@@ -163,13 +171,18 @@ def print_trade_results(trades):
         else:
             losing_trades += 1
     
+    # Add delay before summary
+    time.sleep(0.5)
+    print("\n" + "=" * 60)
+    print("SUMMARY STATISTICS:")
+    print("=" * 60)
+    
     # Summary statistics
     total_trades = len(trades)
     win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
     avg_duration = total_duration / total_trades if total_trades > 0 else 0
     avg_pnl = total_pnl / total_trades if total_trades > 0 else 0
     
-    print("\nSUMMARY STATISTICS:")
     print(f"Total Trades: {total_trades}")
     print(f"Winning Trades: {winning_trades}")
     print(f"Losing Trades: {losing_trades}")
@@ -177,6 +190,17 @@ def print_trade_results(trades):
     print(f"Total PnL: {total_pnl:.2f}%")
     print(f"Average PnL per Trade: {avg_pnl:.2f}%")
     print(f"Average Trade Duration: {avg_duration:.1f} days")
+    
+    # Final performance assessment
+    time.sleep(0.5)
+    print("\n" + "=" * 60)
+    print("PERFORMANCE ASSESSMENT:")
+    print("=" * 60)
+    if total_pnl > 0:
+        print("✅ Strategy was PROFITABLE")
+    else:
+        print("❌ Strategy was NOT PROFITABLE")
+    print(f"Final Return: {total_pnl:.2f}%")
 
 def main():
     """Main function to run the trading simulation"""
@@ -207,9 +231,10 @@ def main():
     print(f"Bearish crossovers (price < 200-day SMA): {bearish_count}")
     
     # Simulate trading
+    print("\nSimulating trades...")
     trades = simulate_trading(df, bullish_signals, bearish_signals)
     
-    # Print results
+    # Print results with delay
     print_trade_results(trades)
 
 if __name__ == "__main__":
