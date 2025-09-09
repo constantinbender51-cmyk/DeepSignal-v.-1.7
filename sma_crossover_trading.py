@@ -56,6 +56,7 @@ def consult_deepseek_for_regime_change(df, current_index, signal_type):
         )
         
         answer = response.choices[0].message.content.strip().upper()
+        print("ANSWER: ", answer)
         return answer == "YES"
         
     except Exception as e:
