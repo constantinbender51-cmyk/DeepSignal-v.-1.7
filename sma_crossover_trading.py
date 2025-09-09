@@ -14,38 +14,76 @@ client = openai.OpenAI(
 def consult_deepseek_for_regime_change(df, current_index, signal_type):
     """
     Consult DeepSeek AI to determine if a signal represents a market regime change
+    with volume and market structure analysis
     """
     # Get recent price action context (last 50 periods)
     start_idx = max(0, current_index - 50)
     recent_data = df.iloc[start_idx:current_index+1]
     
-    # Prepare context for AI
+    # Calculate market structure metrics
     price_trend = "Bullish" if df['close'].iloc[current_index] > df['close'].iloc[start_idx] else "Bearish"
     volatility = recent_data['high'].max() - recent_data['low'].min()
     current_price = df['close'].iloc[current_index]
     sma_value = df['sma_200_day'].iloc[current_index] if not pd.isna(df['sma_200_day'].iloc[current_index]) else "N/A"
     
-    # Create prompt for DeepSeek
+    # Volume analysis
+    avg_volume = recent_data['volume'].mean()
+    current_volume = df['volume'].iloc[current_index]
+    volume_ratio = current_volume / avg_volume if avg_volume > 0 else 1
+    volume_trend = "Above average" if volume_ratio > 1.2 else "Below average" if volume_ratio < 0.8 else "Average"
+    
+    # Market structure analysis
+    resistance_level = recent_data['high'].max()
+    support_level = recent_data['low'].min()
+    near_resistance = (resistance_level - current_price) / current_price < 0.02  # Within 2%
+    near_support = (current_price - support_level) / current_price < 0.02  # Within 2%
+    
+    # Price action context
+    higher_highs = len([i for i in range(1, len(recent_data)) if recent_data['high'].iloc[i] > recent_data['high'].iloc[i-1]])
+    higher_lows = len([i for i in range(1, len(recent_data)) if recent_data['low'].iloc[i] > recent_data['low'].iloc[i-1]])
+    lower_highs = len([i for i in range(1, len(recent_data)) if recent_data['high'].iloc[i] < recent_data['high'].iloc[i-1]])
+    lower_lows = len([i for i in range(1, len(recent_data)) if recent_data['low'].iloc[i] < recent_data['low'].iloc[i-1]])
+    
+    # Create prompt for DeepSeek with volume and market structure data
     prompt = f"""
-    As a financial market expert, analyze this trading situation and determine if it represents a genuine market regime change:
+    As a financial market expert, analyze this trading situation and determine if it represents a genuine market regime change.
+    Consider volume patterns, market structure, and price action in your analysis.
     
     Current Situation:
-    - Signal Type: {signal_type} crossover
+    - Signal Type: {signal_type} crossover of 200-day SMA
     - Current Price: ${current_price:.2f}
     - 200-Day SMA: ${sma_value:.2f} (if available)
+    - Distance from SMA: {(current_price - sma_value) / sma_value * 100:.2f}% 
     - Recent Price Trend: {price_trend}
     - Recent Volatility: {volatility:.2f} points
     
-    Recent Price Action (last 50 periods):
-    - Highest Price: ${recent_data['high'].max():.2f}
-    - Lowest Price: ${recent_data['low'].min():.2f}
-    - Average Range: ${(recent_data['high'] - recent_data['low']).mean():.2f}
+    Volume Analysis:
+    - Current Volume: {current_volume:,.0f}
+    - Average Volume (last 50 periods): {avg_volume:,.0f}
+    - Volume Ratio: {volume_ratio:.2f}x ({volume_trend})
     
-    Based on your expertise in market regime changes and technical analysis, does this crossover signal represent:
-    1. A genuine market regime change (respond with "YES")
-    2. Just a temporary fluctuation (respond with "NO")
+    Market Structure:
+    - Resistance Level: ${resistance_level:.2f}
+    - Support Level: ${support_level:.2f}
+    - Near Resistance: {near_resistance} (within 2%)
+    - Near Support: {near_support} (within 2%)
     
-    Provide only a one-word response: "YES" or "NO"
+    Price Action Context (last 50 periods):
+    - Higher Highs: {higher_highs}
+    - Higher Lows: {higher_lows}
+    - Lower Highs: {lower_highs}
+    - Lower Lows: {lower_lows}
+    
+    Based on your expertise in market regime changes, technical analysis, volume analysis, and market structure:
+    Does this crossover signal represent a genuine market regime change with supporting volume and structural confirmation?
+    
+    Consider:
+    1. Is volume supporting the move? (High volume on breakouts suggests conviction)
+    2. Is the price breaking key structural levels? (Support/resistance)
+    3. Is the price action showing consistency? (Series of higher highs/lows for bullish, lower highs/lows for bearish)
+    4. Is the move significant relative to recent volatility?
+    
+    Provide only a one-word response: "YES" if this is a high-probability regime change, or "NO" if it's likely a false signal.
     """
     
     try:
@@ -54,10 +92,8 @@ def consult_deepseek_for_regime_change(df, current_index, signal_type):
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3  # Lower temperature for more deterministic responses
         )
-        print("Prompt: ", prompt)
         
         answer = response.choices[0].message.content.strip().upper()
-        print("ANSWER: ", answer)
         return answer == "YES"
         
     except Exception as e:
@@ -102,6 +138,10 @@ def calculate_200_day_sma(df):
     # Calculate additional metrics for analysis
     df['daily_volatility'] = (df['high'] - df['low']) / df['close'] * 100  # % volatility
     df['sma_distance'] = (df['close'] - df['sma_200_day']) / df['sma_200_day'] * 100  # % from SMA
+    
+    # Volume-based indicators
+    df['volume_ma_20'] = df['volume'].rolling(window=20).mean()
+    df['volume_ratio'] = df['volume'] / df['volume_ma_20']
     
     # Identify crossover points
     df['prev_close'] = df['close'].shift(1)
