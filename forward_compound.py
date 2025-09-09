@@ -26,7 +26,7 @@ def bar_exit(bar: Dict, slc: Slice) -> tuple:
         if bar["high"]>= tgt_px:   return tgt_px + SLIP, False
     else:
         if bar["high"]>= stop_px:  return stop_px + SLIP, False
-        if bar["low"] <= tgt_px:   return tgt_px - SLIP, True
+        if bar["low"] <= tgt_px:   return tgt_px - SLIP, False
     return None, None
 
 def check_24h_exit(bar: Dict, slc: Slice) -> tuple:
@@ -47,6 +47,8 @@ def net_pos(slices: List[Slice]) -> float:
 
 def run():
     df = pd.read_csv(CSV, parse_dates=["open_time"]).rename(columns={"open_time":"time"})
+    # Rename the 'close' column to 'c' to match the preselection function's expectations.
+    df.rename(columns={'close': 'c'}, inplace=True)
     candles = df.to_dict("records")
     start = random.randint(50, len(candles)-5000)   # leave runway
     slices: List[Slice] = []
@@ -82,23 +84,22 @@ def run():
             slices.remove(slc)
         closed_cnt += len(exits)
 
-        # ---------- new signal ----------
-        # First, apply the preselection filter
-        preselection_candles = [dict(time=c["time"].timestamp(),o=c["open"],h=c["high"],l=c["low"],c=c["close"],v=c["volume"])
-                                for c in candles[idx-50:idx]]
+        # ---------- new signal based on preselection ----------
+        # Get the slice of the last 50 candles for preselection check
+        last50 = candles[idx-50:idx]
         
-        # We only generate a signal if preselection criteria are met
-        if len(preselection_candles) >= 50 and check_sma_crossover(preselection_candles, short_period=20, long_period=50):
-            action, stop, target, reason = get_signal(preselection_candles)
-            # Only print the signal details if we actually got one
-            print(f"Action: {action} stop: {stop} target: {target} reason: {reason}")
+        # Only generate a signal if the preselection criteria are met
+        if check_sma_crossover(last50):
+            action, stop, target, reason = get_signal(last50)    
+            print("Action: ", action, "stop: ", stop, "target:", target, "reason: ", reason)
             
             if action != "FLAT":
                 entry = bar["open"] * (1 + 5/3600/100)   # 5-sec slip
                 slices.append(Slice(action.lower(), entry, stop, target, idx, bar["time"]))
         else:
-            print("Preselection criteria not met. Skipping signal generation.")
-        
+            # If preselection fails, inform the user and do nothing
+            print(f"[{bar['time']}] bar {idx} - No preselection criteria met. Skipping signal generation.")
+
         # ---------- logging ----------
         if idx % 100 == 0 or exits:
             print(f"[{bar['time']}] bar {idx}  net {net_pos(slices):+.4f}  slices {len(slices)}  "
