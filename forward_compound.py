@@ -61,7 +61,7 @@ def run():
             avg = sum(t["pnl_pct"] for t in trades) / closed_cnt
             print(f"---- expectancy after {closed_cnt} slices: {avg:.3%} ----")
 
-        if closed_cnt >= 200:
+        if closed_cnt >= 20:
             break
 
     # ---------- summary ----------
