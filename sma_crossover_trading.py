@@ -54,6 +54,7 @@ def consult_deepseek_for_regime_change(df, current_index, signal_type):
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3  # Lower temperature for more deterministic responses
         )
+        print("Prompt: ", prompt)
         
         answer = response.choices[0].message.content.strip().upper()
         print("ANSWER: ", answer)
