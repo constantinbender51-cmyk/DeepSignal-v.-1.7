@@ -44,10 +44,58 @@ def consult_deepseek_for_regime_change(df, current_index, signal_type):
     lower_highs = len([i for i in range(1, len(recent_data)) if recent_data['high'].iloc[i] < recent_data['high'].iloc[i-1]])
     lower_lows = len([i for i in range(1, len(recent_data)) if recent_data['low'].iloc[i] < recent_data['low'].iloc[i-1]])
     
-    # Create prompt for DeepSeek with volume and market structure data
+    # Get last 20 periods of SMA and price data for trend analysis
+    recent_start_idx = max(0, current_index - 19)  # Get 20 periods including current
+    recent_periods = min(20, current_index + 1)
+    recent_data_20 = df.iloc[recent_start_idx:current_index+1]
+    
+    # Create table of recent price and SMA values
+    recent_table = []
+    for j in range(len(recent_data_20)):
+        idx = recent_start_idx + j
+        price = df['close'].iloc[idx]
+        sma = df['sma_200_day'].iloc[idx] if not pd.isna(df['sma_200_day'].iloc[idx]) else None
+        if sma is not None:
+            price_vs_sma = ((price - sma) / sma * 100)
+            trend = "ABOVE" if price > sma else "BELOW"
+        else:
+            price_vs_sma = "N/A"
+            trend = "N/A"
+        
+        recent_table.append({
+            'time': df.index[idx],
+            'price': price,
+            'sma_200': sma,
+            'difference': price_vs_sma,
+            'trend': trend
+        })
+    
+    # Format the recent data table for the prompt
+    recent_data_str = "\nRecent Price vs 200-Day SMA (last 20 periods):\n"
+    recent_data_str += "Time                 | Price    | SMA      | Diff %   | Trend\n"
+    recent_data_str += "-" * 55 + "\n"
+    
+    for entry in recent_table:
+        time_str = entry['time'].strftime('%Y-%m-%d %H:%M')
+        price_str = f"{entry['price']:.2f}" if entry['price'] is not None else "N/A"
+        sma_str = f"{entry['sma_200']:.2f}" if entry['sma_200'] is not None else "N/A"
+        
+        if isinstance(entry['difference'], (int, float)):
+            diff_str = f"{entry['difference']:+.2f}%"
+        else:
+            diff_str = "N/A"
+        
+        recent_data_str += f"{time_str} | ${price_str:>8} | ${sma_str:>8} | {diff_str:>8} | {entry['trend']:>6}\n"
+    
+    # Calculate trend consistency
+    above_sma_count = sum(1 for entry in recent_table if entry['trend'] == "ABOVE")
+    below_sma_count = sum(1 for entry in recent_table if entry['trend'] == "BELOW")
+    trend_consistency = f"{above_sma_count}/{len(recent_table)} periods above SMA" if above_sma_count > below_sma_count else f"{below_sma_count}/{len(recent_table)} periods below SMA"
+    
+    # Create prompt for DeepSeek with enhanced recent data
     prompt = f"""
     As a financial market expert, analyze this trading situation and determine if it represents a genuine market regime change.
-    Consider volume patterns, market structure, and price action in your analysis.
+    Consider volume patterns, market structure, price action, and the recent trend in your analysis.
     
     Current Situation:
     - Signal Type: {signal_type} crossover of 200-day SMA
@@ -74,6 +122,10 @@ def consult_deepseek_for_regime_change(df, current_index, signal_type):
     - Lower Highs: {lower_highs}
     - Lower Lows: {lower_lows}
     
+    {recent_data_str}
+    
+    Trend Consistency: {trend_consistency}
+    
     Based on your expertise in market regime changes, technical analysis, volume analysis, and market structure:
     Does this crossover signal represent a genuine market regime change with supporting volume and structural confirmation?
     
@@ -82,6 +134,8 @@ def consult_deepseek_for_regime_change(df, current_index, signal_type):
     2. Is the price breaking key structural levels? (Support/resistance)
     3. Is the price action showing consistency? (Series of higher highs/lows for bullish, lower highs/lows for bearish)
     4. Is the move significant relative to recent volatility?
+    5. How does the recent trend (last 20 periods) support or contradict this signal?
+    6. Is this a clean break or has the price been oscillating around the SMA?
     
     Provide only a one-word response: "YES" if this is a high-probability regime change, or "NO" if it's likely a false signal.
     """
