@@ -28,33 +28,28 @@ def load_and_process_data():
         print(f"Error loading data: {e}")
         return None
 
-def calculate_sma_crossovers(df):
-    """Calculate 5-day and 200-day SMA and their crossover signals with enhanced metrics"""
-    # Calculate window sizes in hours (5 days * 24 hours, 200 days * 24 hours)
-    window_5d = 5 * 24  # 120 hours
-    window_200d = 200 * 24  # 4800 hours
-    
-    if df is None or len(df) < window_200d:
-        print(f"Not enough data for SMA calculations. Need at least {window_200d} hours, have {len(df)}")
+def calculate_200_day_sma(df):
+    """Calculate 200-day SMA (4800 hours) and additional indicators"""
+    if df is None or len(df) < 4800:
+        print(f"Not enough data for 200-day SMA calculation. Need at least 4800 hours, have {len(df)}")
         return df, [], []
     
-    # Calculate both SMAs
-    df['sma_5_day'] = df['close'].rolling(window=window_5d).mean()
-    df['sma_200_day'] = df['close'].rolling(window=window_200d).mean()
+    # Calculate 200-day SMA (200 days * 24 hours/day = 4800 hours)
+    df['sma_200_day'] = df['close'].rolling(window=4800).mean()
     
     # Calculate additional metrics for analysis
     df['daily_volatility'] = (df['high'] - df['low']) / df['close'] * 100  # % volatility
-    df['sma_distance'] = (df['sma_5_day'] - df['sma_200_day']) / df['sma_200_day'] * 100  # % distance between SMAs
+    df['sma_distance'] = (df['close'] - df['sma_200_day']) / df['sma_200_day'] * 100  # % from SMA
     
-    # Identify crossover points (5-day SMA crossing 200-day SMA)
-    df['prev_sma5'] = df['sma_5_day'].shift(1)
-    df['prev_sma200'] = df['sma_200_day'].shift(1)
+    # Identify crossover points
+    df['prev_close'] = df['close'].shift(1)
+    df['prev_sma'] = df['sma_200_day'].shift(1)
     
-    # Bullish cross (5-day SMA crosses above 200-day SMA)
-    bullish_cross = (df['sma_5_day'] > df['sma_200_day']) & (df['prev_sma5'] <= df['prev_sma200'])
+    # Bullish crossover (price crosses above SMA)
+    bullish_cross = (df['close'] > df['sma_200_day']) & (df['prev_close'] <= df['prev_sma'])
     
-    # Bearish cross (5-day SMA crosses below 200-day SMA)
-    bearish_cross = (df['sma_5_day'] < df['sma_200_day']) & (df['prev_sma5'] >= df['prev_sma200'])
+    # Bearish crossover (price crosses below SMA)
+    bearish_cross = (df['close'] < df['sma_200_day']) & (df['prev_close'] >= df['prev_sma'])
     
     return df, bullish_cross, bearish_cross
 
@@ -70,7 +65,7 @@ def simulate_trading(df, bullish_signals, bearish_signals):
     peak_equity = 10000
     
     # Only start trading after we have enough data for SMA calculation
-    start_index = 200 * 24  # 4800 hours for 200-day SMA
+    start_index = 4800
     
     for i in range(start_index, len(df)):
         current_equity = equity_curve[-1]
@@ -187,7 +182,7 @@ def print_trade_results(trades, equity_curve, max_drawdown):
         return
     
     print("=" * 100)
-    print("TRADE RESULTS - 5-DAY/200-DAY SMA CROSSOVER STRATEGY")
+    print("TRADE RESULTS - 200-DAY SMA CROSSOVER STRATEGY")
     print("=" * 100)
     print("Printing trades with 0.5 second delay...")
     print()
@@ -290,9 +285,8 @@ def print_trade_results(trades, equity_curve, max_drawdown):
 
 def main():
     """Main function to run the trading simulation"""
-    print("Loading data and calculating 5-day/200-day SMA crossover strategy...")
+    print("Loading data and calculating 200-day SMA crossover strategy...")
     print("Note: 200-day SMA requires 4800 hours of data (200 days × 24 hours/day)")
-    print("Note: 5-day SMA requires 120 hours of data (5 days × 24 hours/day)")
     
     # Load and process data
     df = load_and_process_data()
@@ -303,8 +297,8 @@ def main():
     print(f"Date range: {df.index.min()} to {df.index.max()}")
     print(f"Total duration: {(df.index.max() - df.index.min()).days} days")
     
-    # Calculate SMA crossovers
-    df, bullish_signals, bearish_signals = calculate_sma_crossovers(df)
+    # Calculate 200-day SMA and trading signals
+    df, bullish_signals, bearish_signals = calculate_200_day_sma(df)
     
     if df is None:
         return
@@ -314,8 +308,8 @@ def main():
     bearish_count = bearish_signals.sum()
     
     print(f"\nSignal Analysis:")
-    print(f"Bullish Cross signals (5-day SMA > 200-day SMA): {bullish_count}")
-    print(f"Bearish Cross signals (5-day SMA < 200-day SMA): {bearish_count}")
+    print(f"Bullish crossovers (price > 200-day SMA): {bullish_count}")
+    print(f"Bearish crossovers (price < 200-day SMA): {bearish_count}")
     
     # Simulate trading
     print("\nSimulating trades...")
