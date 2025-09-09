@@ -99,8 +99,9 @@ def run():
         mark_px    = bar['close']                               # current price
 
         if idx % 100 == 0 or exits:
+            avg = sum(t['pnl_pct'] for t in trades) / closed_cnt
             print(f"[{bar['time']}] bar {idx}  net {net_pos(slices):+.4f}  "
-                  f"mark {mark_px:.2f}  closed_pnl {closed_pnl:+.2%}  "
+                  f"mark {mark_px:.2f}  closed_pnl {avg:+.2%}  "
                   f"slices {len(slices)}  "
                   f"new {action if not slices else 'WAIT'}  exits {len(exits)}")
 
