@@ -37,7 +37,7 @@ def check_sma_crossover(candles: List[Dict]) -> bool:
     # Check the condition: is the SMA20 value within 5% of the SMA50 value?
     # This is done by checking if the absolute difference is less than or equal to
     # 5% of the SMA50 value.
-    if abs(sma_20_last - sma_50_last) / sma_50_last <= 0.05:
+    if abs(sma_20_last - sma_50_last) / sma_50_last <= 0.01:
         return True
     
     return False
