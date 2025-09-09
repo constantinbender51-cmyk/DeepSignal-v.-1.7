@@ -86,24 +86,23 @@ def run():
         # First, apply the preselection filter
         preselection_candles = [dict(time=c["time"].timestamp(),o=c["open"],h=c["high"],l=c["low"],c=c["close"],v=c["volume"])
                                 for c in candles[idx-50:idx]]
-
-        # Only check for a signal if the preselection criteria are met
-        action = "FLAT" # Default to FLAT unless a signal is generated
-        stop, target, reason = None, None, None
         
+        # We only generate a signal if preselection criteria are met
         if len(preselection_candles) >= 50 and check_sma_crossover(preselection_candles, short_period=20, long_period=50):
             action, stop, target, reason = get_signal(preselection_candles)
+            # Only print the signal details if we actually got one
+            print(f"Action: {action} stop: {stop} target: {target} reason: {reason}")
+            
+            if action != "FLAT":
+                entry = bar["open"] * (1 + 5/3600/100)   # 5-sec slip
+                slices.append(Slice(action.lower(), entry, stop, target, idx, bar["time"]))
+        else:
+            print("Preselection criteria not met. Skipping signal generation.")
         
-        print("Action: ", action, "stop: ", stop, "target:", target, "reason: ", reason)
-        
-        if action != "FLAT":
-            entry = bar["open"] * (1 + 5/3600/100)   # 5-sec slip
-            slices.append(Slice(action.lower(), entry, stop, target, idx, bar["time"]))
-
         # ---------- logging ----------
         if idx % 100 == 0 or exits:
             print(f"[{bar['time']}] bar {idx}  net {net_pos(slices):+.4f}  slices {len(slices)}  "
-                  f"new {action}  exits {len(exits)}")
+                  f"exits {len(exits)}")
             
             # Log slices approaching 24-hour limit
             for slc in slices:
