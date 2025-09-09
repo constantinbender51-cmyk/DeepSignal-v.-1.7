@@ -28,40 +28,45 @@ def load_and_process_data():
         print(f"Error loading data: {e}")
         return None
 
-def calculate_200_day_sma(df):
-    """Calculate 200-day SMA (4800 hours)"""
-    if df is None or len(df) < 4800:
-        print(f"Not enough data for 200-day SMA calculation. Need at least 4800 hours, have {len(df)}")
+def calculate_sma_crossovers(df):
+    """Calculate 50-day and 200-day SMA and their crossover signals"""
+    # Calculate window sizes in hours (50 days * 24 hours, 200 days * 24 hours)
+    window_50d = 50 * 24  # 1200 hours
+    window_200d = 200 * 24  # 4800 hours
+    
+    if df is None or len(df) < window_200d:
+        print(f"Not enough data for SMA calculations. Need at least {window_200d} hours, have {len(df)}")
         return df, [], []
     
-    # Calculate 200-day SMA (200 days * 24 hours/day = 4800 hours)
-    df['sma_200_day'] = df['close'].rolling(window=4800).mean()
+    # Calculate both SMAs
+    df['sma_50_day'] = df['close'].rolling(window=window_50d).mean()
+    df['sma_200_day'] = df['close'].rolling(window=window_200d).mean()
     
-    # Identify crossover points
-    df['prev_close'] = df['close'].shift(1)
-    df['prev_sma'] = df['sma_200_day'].shift(1)
+    # Identify crossover points (50-day SMA crossing 200-day SMA)
+    df['prev_sma50'] = df['sma_50_day'].shift(1)
+    df['prev_sma200'] = df['sma_200_day'].shift(1)
     
-    # Bullish crossover (price crosses above SMA)
-    bullish_cross = (df['close'] > df['sma_200_day']) & (df['prev_close'] <= df['prev_sma'])
+    # Golden cross (50-day SMA crosses above 200-day SMA) - BULLISH
+    golden_cross = (df['sma_50_day'] > df['sma_200_day']) & (df['prev_sma50'] <= df['prev_sma200'])
     
-    # Bearish crossover (price crosses below SMA)
-    bearish_cross = (df['close'] < df['sma_200_day']) & (df['prev_close'] >= df['prev_sma'])
+    # Death cross (50-day SMA crosses below 200-day SMA) - BEARISH
+    death_cross = (df['sma_50_day'] < df['sma_200_day']) & (df['prev_sma50'] >= df['prev_sma200'])
     
-    return df, bullish_cross, bearish_cross
+    return df, golden_cross, death_cross
 
-def simulate_trading(df, bullish_signals, bearish_signals):
-    """Simulate trading and calculate PnL"""
+def simulate_trading(df, golden_cross_signals, death_cross_signals):
+    """Simulate trading based on 50-day/200-day SMA crossovers"""
     trades = []
     current_position = None  # None, 'long', or 'short'
     entry_price = 0
     entry_time = None
     entry_index = None
     
-    # Only start trading after we have enough data for SMA calculation
-    start_index = 4800  # Start after we have 200 days of data
+    # Only start trading after we have enough data for both SMA calculations
+    start_index = 200 * 24  # 4800 hours for 200-day SMA
     
     for i in range(start_index, len(df)):
-        if bullish_signals.iloc[i] and current_position != 'long':
+        if golden_cross_signals.iloc[i] and current_position != 'long':
             # Close any existing short position
             if current_position == 'short':
                 exit_price = df['close'].iloc[i]
@@ -75,16 +80,17 @@ def simulate_trading(df, bullish_signals, bearish_signals):
                     'entry_price': entry_price,
                     'exit_price': exit_price,
                     'pnl_pct': pnl,
-                    'duration_days': trade_duration
+                    'duration_days': trade_duration,
+                    'signal': 'death_cross_exit'
                 })
             
-            # Open long position
+            # Open long position on golden cross
             current_position = 'long'
             entry_price = df['close'].iloc[i]
             entry_time = df.index[i]
             entry_index = i
         
-        elif bearish_signals.iloc[i] and current_position != 'short':
+        elif death_cross_signals.iloc[i] and current_position != 'short':
             # Close any existing long position
             if current_position == 'long':
                 exit_price = df['close'].iloc[i]
@@ -98,10 +104,11 @@ def simulate_trading(df, bullish_signals, bearish_signals):
                     'entry_price': entry_price,
                     'exit_price': exit_price,
                     'pnl_pct': pnl,
-                    'duration_days': trade_duration
+                    'duration_days': trade_duration,
+                    'signal': 'golden_cross_exit'
                 })
             
-            # Open short position
+            # Open short position on death cross
             current_position = 'short'
             entry_price = df['close'].iloc[i]
             entry_time = df.index[i]
@@ -115,9 +122,11 @@ def simulate_trading(df, bullish_signals, bearish_signals):
         if current_position == 'long':
             pnl = (exit_price - entry_price) / entry_price * 100
             trade_type = 'long_close'
+            signal_type = 'final_close'
         else:
             pnl = (entry_price - exit_price) / entry_price * 100
             trade_type = 'short_close'
+            signal_type = 'final_close'
         
         trades.append({
             'type': trade_type,
@@ -126,7 +135,8 @@ def simulate_trading(df, bullish_signals, bearish_signals):
             'entry_price': entry_price,
             'exit_price': exit_price,
             'pnl_pct': pnl,
-            'duration_days': trade_duration
+            'duration_days': trade_duration,
+            'signal': signal_type
         })
     
     return trades
@@ -138,7 +148,7 @@ def print_trade_results(trades):
         return
     
     print("=" * 100)
-    print("TRADE RESULTS - 200-DAY SMA CROSSOVER STRATEGY")
+    print("TRADE RESULTS - 50-DAY/200-DAY SMA CROSSOVER STRATEGY")
     print("=" * 100)
     print("Printing trades with 0.5 second delay...")
     print()
@@ -154,10 +164,11 @@ def print_trade_results(trades):
         
         pnl_sign = "+" if trade['pnl_pct'] >= 0 else ""
         trade_direction = "LONG" if trade['type'] == 'long_close' else "SHORT"
+        signal_type = "GOLDEN CROSS" if 'golden' in trade.get('signal', '') else "DEATH CROSS"
         pnl_color = "\033[92m" if trade['pnl_pct'] >= 0 else "\033[91m"  # Green for profit, red for loss
         reset_color = "\033[0m"
         
-        print(f"Trade {i}: {trade_direction}")
+        print(f"Trade {i}: {trade_direction} ({signal_type})")
         print(f"  Entry:    {trade['entry_time']} @ ${trade['entry_price']:.2f}")
         print(f"  Exit:     {trade['exit_time']} @ ${trade['exit_price']:.2f}")
         print(f"  Duration: {trade['duration_days']:.1f} days")
@@ -204,8 +215,9 @@ def print_trade_results(trades):
 
 def main():
     """Main function to run the trading simulation"""
-    print("Loading data and calculating 200-day SMA crossover strategy...")
+    print("Loading data and calculating 50-day/200-day SMA crossover strategy...")
     print("Note: 200-day SMA requires 4800 hours of data (200 days × 24 hours/day)")
+    print("Note: 50-day SMA requires 1200 hours of data (50 days × 24 hours/day)")
     
     # Load and process data
     df = load_and_process_data()
@@ -216,23 +228,23 @@ def main():
     print(f"Date range: {df.index.min()} to {df.index.max()}")
     print(f"Total duration: {(df.index.max() - df.index.min()).days} days")
     
-    # Calculate 200-day SMA and trading signals
-    df, bullish_signals, bearish_signals = calculate_200_day_sma(df)
+    # Calculate SMA crossovers
+    df, golden_cross_signals, death_cross_signals = calculate_sma_crossovers(df)
     
     if df is None:
         return
     
     # Count signals
-    bullish_count = bullish_signals.sum()
-    bearish_count = bearish_signals.sum()
+    golden_count = golden_cross_signals.sum()
+    death_count = death_cross_signals.sum()
     
     print(f"\nSignal Analysis:")
-    print(f"Bullish crossovers (price > 200-day SMA): {bullish_count}")
-    print(f"Bearish crossovers (price < 200-day SMA): {bearish_count}")
+    print(f"Golden Cross signals (50-day SMA > 200-day SMA): {golden_count}")
+    print(f"Death Cross signals (50-day SMA < 200-day SMA): {death_count}")
     
     # Simulate trading
     print("\nSimulating trades...")
-    trades = simulate_trading(df, bullish_signals, bearish_signals)
+    trades = simulate_trading(df, golden_cross_signals, death_cross_signals)
     
     # Print results with delay
     print_trade_results(trades)
