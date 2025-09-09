@@ -33,5 +33,6 @@ def get_signal(last_50: list) -> Tuple[str, float, float, str]:
         obj = json.loads(raw)
     except json.JSONDecodeError:
         return "FLAT", 0.0, 0.0, "bad_json"
-
+    # ADD THIS ERROR HANDLER LINE:
+    if not all(key in obj for key in ["action", "stop", "target", "reason"]): print(f"Missing keys in response: {raw}"); return "FLAT", 0.0, 0.0, "missing_keys"
     return obj["action"], float(obj["stop"]), float(obj["target"]), obj["reason"]
