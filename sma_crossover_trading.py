@@ -441,6 +441,11 @@ def print_trade_results(trades, equity_curve, max_drawdown, ai_stats):
         print(f"  Duration: {trade['duration_days']:.1f} days")
         print(f"  PnL:      {pnl_color}{pnl_sign}{trade['pnl_pct']:.2f}% ({pnl_sign}${trade['pnl_dollar']:.2f}){reset_color}")
         print(f"  Equity:   ${trade['equity_after']:.2f}")
+        
+        # Display AI reasoning if available
+        if 'ai_reasoning' in trade and trade['ai_reasoning'] != "No AI reasoning":
+            print(f"  🤖 AI Reasoning: {trade['ai_reasoning']}")
+        
         print("-" * 70)
         
         total_pnl_pct += trade['pnl_pct']
@@ -487,6 +492,17 @@ def print_trade_results(trades, equity_curve, max_drawdown, ai_stats):
     print(f"   Consultations: {ai_stats['consultations']}")
     print(f"   Rejections: {ai_stats['rejections']}")
     print(f"   Approval Rate: {ai_stats['approval_rate']:.1f}%")
+    
+    # Print sample AI reasonings
+    if ai_stats['reasonings']:
+        time.sleep(0.5)
+        print(f"\n📋 SAMPLE AI REASONINGS:")
+        print("=" * 70)
+        for i, reasoning in enumerate(ai_stats['reasonings'][:3]):  # Show first 3
+            print(f"{i+1}. {reasoning['time']} - {reasoning['signal_type']} - {reasoning['decision']}")
+            print(f"   {reasoning['reasoning']}")
+            if i < 2:  # Don't print separator after last one
+                print("-" * 50)
     
     # Best and worst trades
     time.sleep(0.5)
