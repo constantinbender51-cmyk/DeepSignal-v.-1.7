@@ -24,7 +24,8 @@ def consult_deepseek_for_regime_change(df, current_index, signal_type):
     price_trend = "Bullish" if df['close'].iloc[current_index] > df['close'].iloc[start_idx] else "Bearish"
     volatility = recent_data['high'].max() - recent_data['low'].min()
     current_price = df['close'].iloc[current_index]
-    sma_value = df['sma_200_day'].iloc[current_index] if not pd.isna(df['sma_200_day'].iloc[current_index]) else "N/A"
+    sma_200_value = df['sma_200_day'].iloc[current_index] if not pd.isna(df['sma_200_day'].iloc[current_index]) else "N/A"
+    sma_50_value = df['sma_50_day'].iloc[current_index] if not pd.isna(df['sma_50_day'].iloc[current_index]) else "N/A"
     
     # Volume analysis
     avg_volume = recent_data['volume'].mean()
@@ -44,64 +45,85 @@ def consult_deepseek_for_regime_change(df, current_index, signal_type):
     lower_highs = len([i for i in range(1, len(recent_data)) if recent_data['high'].iloc[i] < recent_data['high'].iloc[i-1]])
     lower_lows = len([i for i in range(1, len(recent_data)) if recent_data['low'].iloc[i] < recent_data['low'].iloc[i-1]])
     
-    # Get last 20 periods of SMA and price data for trend analysis
+    # Get last 20 periods of SMA data for trend analysis
     recent_start_idx = max(0, current_index - 19)  # Get 20 periods including current
     recent_periods = min(20, current_index + 1)
     recent_data_20 = df.iloc[recent_start_idx:current_index+1]
     
-    # Create table of recent price and SMA values
+    # Create table of recent SMA relationships
     recent_table = []
     for j in range(len(recent_data_20)):
         idx = recent_start_idx + j
         price = df['close'].iloc[idx]
-        sma = df['sma_200_day'].iloc[idx] if not pd.isna(df['sma_200_day'].iloc[idx]) else None
-        if sma is not None:
-            price_vs_sma = ((price - sma) / sma * 100)
-            trend = "ABOVE" if price > sma else "BELOW"
+        sma_50 = df['sma_50_day'].iloc[idx] if not pd.isna(df['sma_50_day'].iloc[idx]) else None
+        sma_200 = df['sma_200_day'].iloc[idx] if not pd.isna(df['sma_200_day'].iloc[idx]) else None
+        
+        if sma_50 is not None and sma_200 is not None:
+            sma_50_vs_200 = ((sma_50 - sma_200) / sma_200 * 100)
+            trend = "ABOVE" if sma_50 > sma_200 else "BELOW"
+            price_vs_50 = ((price - sma_50) / sma_50 * 100)
+            price_vs_200 = ((price - sma_200) / sma_200 * 100)
         else:
-            price_vs_sma = "N/A"
+            sma_50_vs_200 = "N/A"
             trend = "N/A"
+            price_vs_50 = "N/A"
+            price_vs_200 = "N/A"
         
         recent_table.append({
             'time': df.index[idx],
             'price': price,
-            'sma_200': sma,
-            'difference': price_vs_sma,
-            'trend': trend
+            'sma_50': sma_50,
+            'sma_200': sma_200,
+            'sma_50_vs_200': sma_50_vs_200,
+            'trend': trend,
+            'price_vs_50': price_vs_50,
+            'price_vs_200': price_vs_200
         })
     
     # Format the recent data table for the prompt
-    recent_data_str = "\nRecent Price vs 200-Day SMA (last 20 periods):\n"
-    recent_data_str += "Time                 | Price    | SMA      | Diff %   | Trend\n"
-    recent_data_str += "-" * 55 + "\n"
+    recent_data_str = "\nRecent 50-day vs 200-day SMA Relationship (last 20 periods):\n"
+    recent_data_str += "Time                 | Price    | SMA50    | SMA200   | 50vs200% | Trend  | Pricevs50% | Pricevs200%\n"
+    recent_data_str += "-" * 95 + "\n"
     
     for entry in recent_table:
         time_str = entry['time'].strftime('%Y-%m-%d %H:%M')
         price_str = f"{entry['price']:.2f}" if entry['price'] is not None else "N/A"
-        sma_str = f"{entry['sma_200']:.2f}" if entry['sma_200'] is not None else "N/A"
+        sma_50_str = f"{entry['sma_50']:.2f}" if entry['sma_50'] is not None else "N/A"
+        sma_200_str = f"{entry['sma_200']:.2f}" if entry['sma_200'] is not None else "N/A"
         
-        if isinstance(entry['difference'], (int, float)):
-            diff_str = f"{entry['difference']:+.2f}%"
+        if isinstance(entry['sma_50_vs_200'], (int, float)):
+            sma_diff_str = f"{entry['sma_50_vs_200']:+.2f}%"
         else:
-            diff_str = "N/A"
+            sma_diff_str = "N/A"
+            
+        if isinstance(entry['price_vs_50'], (int, float)):
+            price_vs_50_str = f"{entry['price_vs_50']:+.2f}%"
+        else:
+            price_vs_50_str = "N/A"
+            
+        if isinstance(entry['price_vs_200'], (int, float)):
+            price_vs_200_str = f"{entry['price_vs_200']:+.2f}%"
+        else:
+            price_vs_200_str = "N/A"
         
-        recent_data_str += f"{time_str} | ${price_str:>8} | ${sma_str:>8} | {diff_str:>8} | {entry['trend']:>6}\n"
+        recent_data_str += f"{time_str} | ${price_str:>8} | ${sma_50_str:>8} | ${sma_200_str:>8} | {sma_diff_str:>9} | {entry['trend']:>6} | {price_vs_50_str:>11} | {price_vs_200_str:>12}\n"
     
     # Calculate trend consistency
-    above_sma_count = sum(1 for entry in recent_table if entry['trend'] == "ABOVE")
-    below_sma_count = sum(1 for entry in recent_table if entry['trend'] == "BELOW")
-    trend_consistency = f"{above_sma_count}/{len(recent_table)} periods above SMA" if above_sma_count > below_sma_count else f"{below_sma_count}/{len(recent_table)} periods below SMA"
+    above_count = sum(1 for entry in recent_table if entry['trend'] == "ABOVE")
+    below_count = sum(1 for entry in recent_table if entry['trend'] == "BELOW")
+    trend_consistency = f"{above_count}/{len(recent_table)} periods with 50-day above 200-day" if above_count > below_count else f"{below_count}/{len(recent_table)} periods with 50-day below 200-day"
     
-    # Create prompt for DeepSeek with enhanced recent data
+    # Create prompt for DeepSeek with enhanced SMA relationship data
     prompt = f"""
     As a financial market expert, analyze this trading situation and determine if it represents a genuine market regime change.
-    Consider volume patterns, market structure, price action, and the recent trend in your analysis.
+    Consider the relationship between 50-day and 200-day SMAs, volume patterns, market structure, and price action.
     
     Current Situation:
-    - Signal Type: {signal_type} crossover of 200-day SMA
+    - Signal Type: {signal_type} crossover of 50-day SMA vs 200-day SMA
     - Current Price: ${current_price:.2f}
-    - 200-Day SMA: ${sma_value:.2f} (if available)
-    - Distance from SMA: {(current_price - sma_value) / sma_value * 100:.2f}% 
+    - 50-Day SMA: ${sma_50_value:.2f}
+    - 200-Day SMA: ${sma_200_value:.2f}
+    - 50 vs 200 SMA Distance: {(sma_50_value - sma_200_value) / sma_200_value * 100:.2f}% 
     - Recent Price Trend: {price_trend}
     - Recent Volatility: {volatility:.2f} points
     
@@ -127,15 +149,15 @@ def consult_deepseek_for_regime_change(df, current_index, signal_type):
     Trend Consistency: {trend_consistency}
     
     Based on your expertise in market regime changes, technical analysis, volume analysis, and market structure:
-    Does this crossover signal represent a genuine market regime change with supporting volume and structural confirmation?
+    Does this 50-day vs 200-day SMA crossover signal represent a genuine market regime change with supporting volume and structural confirmation?
     
     Consider:
     1. Is volume supporting the move? (High volume on breakouts suggests conviction)
-    2. Is the price breaking key structural levels? (Support/resistance)
-    3. Is the price action showing consistency? (Series of higher highs/lows for bullish, lower highs/lows for bearish)
-    4. Is the move significant relative to recent volatility?
-    5. How does the recent trend (last 20 periods) support or contradict this signal?
-    6. Is this a clean break or has the price been oscillating around the SMA?
+    2. Is the 50-day SMA making a clean break above/below the 200-day SMA?
+    3. How consistent has the recent trend been? (Multiple periods confirming the direction)
+    4. Is the price action showing consistency with the SMA crossover?
+    5. Are there any structural level breaks (support/resistance) confirming the move?
+    6. Is this a clean break or has the relationship been oscillating?
     
     Provide your response in this exact format:
     DECISION: [YES or NO]
@@ -196,32 +218,35 @@ def load_and_process_data():
         print(f"Error loading data: {e}")
         return None
 
-def calculate_200_day_sma(df):
-    """Calculate 200-day SMA (4800 hours) and additional indicators"""
+def calculate_sma_crossovers(df):
+    """Calculate 50-day and 200-day SMAs and their crossover signals"""
     if df is None or len(df) < 4800:
-        print(f"Not enough data for 200-day SMA calculation. Need at least 4800 hours, have {len(df)}")
+        print(f"Not enough data for SMA calculation. Need at least 4800 hours, have {len(df)}")
         return df, [], []
+    
+    # Calculate 50-day SMA (50 days * 24 hours/day = 1200 hours)
+    df['sma_50_day'] = df['close'].rolling(window=1200).mean()
     
     # Calculate 200-day SMA (200 days * 24 hours/day = 4800 hours)
     df['sma_200_day'] = df['close'].rolling(window=4800).mean()
     
     # Calculate additional metrics for analysis
     df['daily_volatility'] = (df['high'] - df['low']) / df['close'] * 100  # % volatility
-    df['sma_distance'] = (df['close'] - df['sma_200_day']) / df['sma_200_day'] * 100  # % from SMA
+    df['sma_distance'] = (df['sma_50_day'] - df['sma_200_day']) / df['sma_200_day'] * 100  # % difference between SMAs
     
     # Volume-based indicators
     df['volume_ma_20'] = df['volume'].rolling(window=20).mean()
     df['volume_ratio'] = df['volume'] / df['volume_ma_20']
     
-    # Identify crossover points
-    df['prev_close'] = df['close'].shift(1)
-    df['prev_sma'] = df['sma_200_day'].shift(1)
+    # Identify crossover points (50-day vs 200-day SMA)
+    df['prev_sma_50'] = df['sma_50_day'].shift(1)
+    df['prev_sma_200'] = df['sma_200_day'].shift(1)
     
-    # Bullish crossover (price crosses above SMA)
-    bullish_cross = (df['close'] > df['sma_200_day']) & (df['prev_close'] <= df['prev_sma'])
+    # Bullish crossover (50-day SMA crosses above 200-day SMA)
+    bullish_cross = (df['sma_50_day'] > df['sma_200_day']) & (df['prev_sma_50'] <= df['prev_sma_200'])
     
-    # Bearish crossover (price crosses below SMA)
-    bearish_cross = (df['close'] < df['sma_200_day']) & (df['prev_close'] >= df['prev_sma'])
+    # Bearish crossover (50-day SMA crosses below 200-day SMA)
+    bearish_cross = (df['sma_50_day'] < df['sma_200_day']) & (df['prev_sma_50'] >= df['prev_sma_200'])
     
     return df, bullish_cross, bearish_cross
 
@@ -248,7 +273,7 @@ def simulate_trading(df, bullish_signals, bearish_signals):
         signal_type = None
         ai_reasoning = ""
         
-        # Check for bullish signal
+        # Check for bullish signal (50-day crosses above 200-day)
         if bullish_signals.iloc[i] and current_position != 'long':
             signal_type = "BULLISH"
             print(f"\n🔍 Consulting DeepSeek about potential BULLISH regime change at {df.index[i]}...")
@@ -268,7 +293,7 @@ def simulate_trading(df, bullish_signals, bearish_signals):
                 print("✅ DeepSeek approved this trade")
                 print(f"   Reasoning: {ai_reasoning}")
         
-        # Check for bearish signal    
+        # Check for bearish signal (50-day crosses below 200-day)
         elif bearish_signals.iloc[i] and current_position != 'short':
             signal_type = "BEARISH"
             print(f"\n🔍 Consulting DeepSeek about potential BEARISH regime change at {df.index[i]}...")
@@ -414,7 +439,7 @@ def print_trade_results(trades, equity_curve, max_drawdown, ai_stats):
         return
     
     print("=" * 100)
-    print("TRADE RESULTS - AI-ENHANCED 200-DAY SMA CROSSOVER STRATEGY")
+    print("TRADE RESULTS - AI-ENHANCED 50-DAY vs 200-DAY SMA CROSSOVER STRATEGY")
     print("=" * 100)
     print("Printing trades with 0.5 second delay...")
     print()
@@ -540,7 +565,7 @@ def print_trade_results(trades, equity_curve, max_drawdown, ai_stats):
 
 def main():
     """Main function to run the trading simulation"""
-    print("Loading data and calculating 200-day SMA crossover strategy...")
+    print("Loading data and calculating 50-day vs 200-day SMA crossover strategy...")
     print("Note: 200-day SMA requires 4800 hours of data (200 days × 24 hours/day)")
     
     # Check for API key
@@ -557,8 +582,8 @@ def main():
     print(f"Date range: {df.index.min()} to {df.index.max()}")
     print(f"Total duration: {(df.index.max() - df.index.min()).days} days")
     
-    # Calculate 200-day SMA and trading signals
-    df, bullish_signals, bearish_signals = calculate_200_day_sma(df)
+    # Calculate 50-day vs 200-day SMA crossovers
+    df, bullish_signals, bearish_signals = calculate_sma_crossovers(df)
     
     if df is None:
         return
@@ -568,8 +593,8 @@ def main():
     bearish_count = bearish_signals.sum()
     
     print(f"\nSignal Analysis:")
-    print(f"Bullish crossovers (price > 200-day SMA): {bullish_count}")
-    print(f"Bearish crossovers (price < 200-day SMA): {bearish_count}")
+    print(f"Bullish crossovers (50-day > 200-day SMA): {bullish_count}")
+    print(f"Bearish crossovers (50-day < 200-day SMA): {bearish_count}")
     
     # Simulate trading with AI consultation
     print("\nSimulating trades with DeepSeek AI consultation...")
