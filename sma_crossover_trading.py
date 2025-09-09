@@ -2,6 +2,66 @@ import pandas as pd
 import numpy as np
 import time
 from datetime import datetime
+import openai
+import os 
+
+# Initialize DeepSeek client
+client = openai.OpenAI(
+    api_key=os.getenv("DEEPSEEK_API_KEY"),
+    base_url="https://api.deepseek.com/v1"
+)
+
+def consult_deepseek_for_regime_change(df, current_index, signal_type):
+    """
+    Consult DeepSeek AI to determine if a signal represents a market regime change
+    """
+    # Get recent price action context (last 50 periods)
+    start_idx = max(0, current_index - 50)
+    recent_data = df.iloc[start_idx:current_index+1]
+    
+    # Prepare context for AI
+    price_trend = "Bullish" if df['close'].iloc[current_index] > df['close'].iloc[start_idx] else "Bearish"
+    volatility = recent_data['high'].max() - recent_data['low'].min()
+    current_price = df['close'].iloc[current_index]
+    sma_value = df['sma_200_day'].iloc[current_index] if not pd.isna(df['sma_200_day'].iloc[current_index]) else "N/A"
+    
+    # Create prompt for DeepSeek
+    prompt = f"""
+    As a financial market expert, analyze this trading situation and determine if it represents a genuine market regime change:
+    
+    Current Situation:
+    - Signal Type: {signal_type} crossover
+    - Current Price: ${current_price:.2f}
+    - 200-Day SMA: ${sma_value:.2f} (if available)
+    - Recent Price Trend: {price_trend}
+    - Recent Volatility: {volatility:.2f} points
+    
+    Recent Price Action (last 50 periods):
+    - Highest Price: ${recent_data['high'].max():.2f}
+    - Lowest Price: ${recent_data['low'].min():.2f}
+    - Average Range: ${(recent_data['high'] - recent_data['low']).mean():.2f}
+    
+    Based on your expertise in market regime changes and technical analysis, does this crossover signal represent:
+    1. A genuine market regime change (respond with "YES")
+    2. Just a temporary fluctuation (respond with "NO")
+    
+    Provide only a one-word response: "YES" or "NO"
+    """
+    
+    try:
+        response = client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3  # Lower temperature for more deterministic responses
+        )
+        
+        answer = response.choices[0].message.content.strip().upper()
+        return answer == "YES"
+        
+    except Exception as e:
+        print(f"Error consulting DeepSeek: {e}")
+        # Default to proceeding with trade if AI consultation fails
+        return True
 
 def load_and_process_data():
     """Load and process the CSV data with proper ISO8601 parsing"""
@@ -54,7 +114,7 @@ def calculate_200_day_sma(df):
     return df, bullish_cross, bearish_cross
 
 def simulate_trading(df, bullish_signals, bearish_signals):
-    """Simulate trading and calculate PnL with enhanced tracking"""
+    """Simulate trading with DeepSeek consultation for regime changes"""
     trades = []
     current_position = None
     entry_price = 0
@@ -63,14 +123,39 @@ def simulate_trading(df, bullish_signals, bearish_signals):
     equity_curve = [10000]  # Start with $10,000 for equity curve
     max_drawdown = 0
     peak_equity = 10000
+    ai_consultations = 0
+    ai_rejections = 0
     
     # Only start trading after we have enough data for SMA calculation
     start_index = 4800
     
     for i in range(start_index, len(df)):
         current_equity = equity_curve[-1]
+        should_trade = False
+        signal_type = None
         
+        # Check for bullish signal
         if bullish_signals.iloc[i] and current_position != 'long':
+            signal_type = "BULLISH"
+            print(f"\n🔍 Consulting DeepSeek about potential BULLISH regime change at {df.index[i]}...")
+            should_trade = consult_deepseek_for_regime_change(df, i, signal_type)
+            ai_consultations += 1
+            if not should_trade:
+                ai_rejections += 1
+                print("❌ DeepSeek rejected this trade (not a regime change)")
+        
+        # Check for bearish signal    
+        elif bearish_signals.iloc[i] and current_position != 'short':
+            signal_type = "BEARISH"
+            print(f"\n🔍 Consulting DeepSeek about potential BEARISH regime change at {df.index[i]}...")
+            should_trade = consult_deepseek_for_regime_change(df, i, signal_type)
+            ai_consultations += 1
+            if not should_trade:
+                ai_rejections += 1
+                print("❌ DeepSeek rejected this trade (not a regime change)")
+        
+        # Execute trade if approved by AI
+        if should_trade and signal_type == "BULLISH" and current_position != 'long':
             # Close any existing short position
             if current_position == 'short':
                 exit_price = df['close'].iloc[i]
@@ -104,8 +189,9 @@ def simulate_trading(df, bullish_signals, bearish_signals):
             entry_price = df['close'].iloc[i]
             entry_time = df.index[i]
             entry_index = i
+            print(f"✅ DeepSeek approved LONG entry at {entry_time}, price: ${entry_price:.2f}")
         
-        elif bearish_signals.iloc[i] and current_position != 'short':
+        elif should_trade and signal_type == "BEARISH" and current_position != 'short':
             # Close any existing long position
             if current_position == 'long':
                 exit_price = df['close'].iloc[i]
@@ -139,6 +225,7 @@ def simulate_trading(df, bullish_signals, bearish_signals):
             entry_price = df['close'].iloc[i]
             entry_time = df.index[i]
             entry_index = i
+            print(f"✅ DeepSeek approved SHORT entry at {entry_time}, price: ${entry_price:.2f}")
         
         # Update equity curve even when no trade occurs
         if len(equity_curve) < i - start_index + 1:
@@ -173,16 +260,23 @@ def simulate_trading(df, bullish_signals, bearish_signals):
             'equity_after': final_equity
         })
     
-    return trades, equity_curve, max_drawdown
+    # Add AI consultation stats to results
+    ai_stats = {
+        'consultations': ai_consultations,
+        'rejections': ai_rejections,
+        'approval_rate': (ai_consultations - ai_rejections) / ai_consultations * 100 if ai_consultations > 0 else 0
+    }
+    
+    return trades, equity_curve, max_drawdown, ai_stats
 
-def print_trade_results(trades, equity_curve, max_drawdown):
+def print_trade_results(trades, equity_curve, max_drawdown, ai_stats):
     """Print trade results and summary statistics with 0.5 second delay between trades"""
     if not trades:
         print("No trades were executed.")
         return
     
     print("=" * 100)
-    print("TRADE RESULTS - 200-DAY SMA CROSSOVER STRATEGY")
+    print("TRADE RESULTS - AI-ENHANCED 200-DAY SMA CROSSOVER STRATEGY")
     print("=" * 100)
     print("Printing trades with 0.5 second delay...")
     print()
@@ -249,6 +343,13 @@ def print_trade_results(trades, equity_curve, max_drawdown):
     print(f"⏰ Average Trade Duration: {avg_duration:.1f} days")
     print(f"📉 Maximum Drawdown: {max_drawdown:.2f}%")
     
+    # AI Consultation Stats
+    time.sleep(0.5)
+    print(f"\n🤖 AI CONSULTATION STATS")
+    print(f"   Consultations: {ai_stats['consultations']}")
+    print(f"   Rejections: {ai_stats['rejections']}")
+    print(f"   Approval Rate: {ai_stats['approval_rate']:.1f}%")
+    
     # Best and worst trades
     time.sleep(0.5)
     print(f"\n🏆 Best Trade: {best_trade['pnl_pct']:+.2f}%")
@@ -288,6 +389,11 @@ def main():
     print("Loading data and calculating 200-day SMA crossover strategy...")
     print("Note: 200-day SMA requires 4800 hours of data (200 days × 24 hours/day)")
     
+    # Check for API key
+    if not os.getenv("DEEPSEEK_API_KEY"):
+        print("⚠️  DEEPSEEK_API_KEY environment variable not set. AI consultation will not work.")
+        print("You can set it with: export DEEPSEEK_API_KEY='your-api-key-here'")
+    
     # Load and process data
     df = load_and_process_data()
     if df is None:
@@ -311,12 +417,12 @@ def main():
     print(f"Bullish crossovers (price > 200-day SMA): {bullish_count}")
     print(f"Bearish crossovers (price < 200-day SMA): {bearish_count}")
     
-    # Simulate trading
-    print("\nSimulating trades...")
-    trades, equity_curve, max_drawdown = simulate_trading(df, bullish_signals, bearish_signals)
+    # Simulate trading with AI consultation
+    print("\nSimulating trades with DeepSeek AI consultation...")
+    trades, equity_curve, max_drawdown, ai_stats = simulate_trading(df, bullish_signals, bearish_signals)
     
     # Print results with delay
-    print_trade_results(trades, equity_curve, max_drawdown)
+    print_trade_results(trades, equity_curve, max_drawdown, ai_stats)
 
 if __name__ == "__main__":
     main()
