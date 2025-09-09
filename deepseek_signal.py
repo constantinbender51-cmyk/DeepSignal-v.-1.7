@@ -11,7 +11,7 @@ client = openai.OpenAI(
 
 def get_signal(last_50: list) -> Tuple[str, float, float]:
     prompt = (
-        "You are a crypto strategist. If you can identify a trading signal in either direction, buy or sell and set stop/target to appropriate levels according to sound risk management practices. If unsure, FLAT, 0.0, 0.0, <string>. If no stop or target has been triggered after 24 hours, the trade will be automatically closed. Use indicators, rainbow chart v2. Last 50 1-h candles:\n"
+        "You are a crypto strategist. If you can identify a trading signal in either direction, buy or sell and set stop/target to appropriate levels according to sound risk management practices. If unsure, FLAT, 0.0, 0.0, <string>. If no stop or target has been triggered after 24 hours, the trade will be automatically closed. The current candle has been selected because sma20 and sma49 are very close. Last 50 1-h candles:\n"
         f"{json.dumps(last_50)}\n"
         'Reply JSON only: {"action":"BUY"|"SELL"|"FLAT","stop":<percent>,"target":<percent>,"reason":<string>}'
     )
