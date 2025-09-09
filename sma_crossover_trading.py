@@ -137,7 +137,9 @@ def consult_deepseek_for_regime_change(df, current_index, signal_type):
     5. How does the recent trend (last 20 periods) support or contradict this signal?
     6. Is this a clean break or has the price been oscillating around the SMA?
     
-    Provide only a one-word response: "YES" if this is a high-probability regime change, or "NO" if it's likely a false signal.
+    Provide your response in this exact format:
+    DECISION: [YES or NO]
+    REASONING: [Your detailed reasoning paragraph here]
     """
     
     try:
@@ -146,15 +148,28 @@ def consult_deepseek_for_regime_change(df, current_index, signal_type):
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3  # Lower temperature for more deterministic responses
         )
-        print("PROMPT: ", prompt)
-        answer = response.choices[0].message.content.strip().upper()
-        print("ANSWER: ", answer)
-        return answer == "YES"
+        
+        answer = response.choices[0].message.content.strip()
+        
+        # Parse the response
+        decision_line = None
+        reasoning_line = None
+        
+        for line in answer.split('\n'):
+            if line.startswith('DECISION:'):
+                decision_line = line.replace('DECISION:', '').strip().upper()
+            elif line.startswith('REASONING:'):
+                reasoning_line = line.replace('REASONING:', '').strip()
+        
+        decision = decision_line == "YES" if decision_line else False
+        reasoning = reasoning_line if reasoning_line else "No reasoning provided by AI"
+        
+        return decision, reasoning
         
     except Exception as e:
         print(f"Error consulting DeepSeek: {e}")
         # Default to proceeding with trade if AI consultation fails
-        return True
+        return True, f"AI consultation failed: {str(e)}"
 
 def load_and_process_data():
     """Load and process the CSV data with proper ISO8601 parsing"""
@@ -222,6 +237,7 @@ def simulate_trading(df, bullish_signals, bearish_signals):
     peak_equity = 10000
     ai_consultations = 0
     ai_rejections = 0
+    ai_reasonings = []  # Store AI reasoning for each consultation
     
     # Only start trading after we have enough data for SMA calculation
     start_index = 4800
@@ -230,26 +246,47 @@ def simulate_trading(df, bullish_signals, bearish_signals):
         current_equity = equity_curve[-1]
         should_trade = False
         signal_type = None
+        ai_reasoning = ""
         
         # Check for bullish signal
         if bullish_signals.iloc[i] and current_position != 'long':
             signal_type = "BULLISH"
             print(f"\n🔍 Consulting DeepSeek about potential BULLISH regime change at {df.index[i]}...")
-            should_trade = consult_deepseek_for_regime_change(df, i, signal_type)
+            should_trade, ai_reasoning = consult_deepseek_for_regime_change(df, i, signal_type)
             ai_consultations += 1
+            ai_reasonings.append({
+                'time': df.index[i],
+                'signal_type': signal_type,
+                'decision': 'APPROVED' if should_trade else 'REJECTED',
+                'reasoning': ai_reasoning
+            })
             if not should_trade:
                 ai_rejections += 1
                 print("❌ DeepSeek rejected this trade (not a regime change)")
+                print(f"   Reasoning: {ai_reasoning}")
+            else:
+                print("✅ DeepSeek approved this trade")
+                print(f"   Reasoning: {ai_reasoning}")
         
         # Check for bearish signal    
         elif bearish_signals.iloc[i] and current_position != 'short':
             signal_type = "BEARISH"
             print(f"\n🔍 Consulting DeepSeek about potential BEARISH regime change at {df.index[i]}...")
-            should_trade = consult_deepseek_for_regime_change(df, i, signal_type)
+            should_trade, ai_reasoning = consult_deepseek_for_regime_change(df, i, signal_type)
             ai_consultations += 1
+            ai_reasonings.append({
+                'time': df.index[i],
+                'signal_type': signal_type,
+                'decision': 'APPROVED' if should_trade else 'REJECTED',
+                'reasoning': ai_reasoning
+            })
             if not should_trade:
                 ai_rejections += 1
                 print("❌ DeepSeek rejected this trade (not a regime change)")
+                print(f"   Reasoning: {ai_reasoning}")
+            else:
+                print("✅ DeepSeek approved this trade")
+                print(f"   Reasoning: {ai_reasoning}")
         
         # Execute trade if approved by AI
         if should_trade and signal_type == "BULLISH" and current_position != 'long':
@@ -278,7 +315,8 @@ def simulate_trading(df, bullish_signals, bearish_signals):
                     'pnl_pct': pnl_pct,
                     'pnl_dollar': pnl_dollar,
                     'duration_days': trade_duration,
-                    'equity_after': current_equity
+                    'equity_after': current_equity,
+                    'ai_reasoning': ai_reasoning if ai_reasoning else "No AI reasoning"
                 })
             
             # Open long position
@@ -314,7 +352,8 @@ def simulate_trading(df, bullish_signals, bearish_signals):
                     'pnl_pct': pnl_pct,
                     'pnl_dollar': pnl_dollar,
                     'duration_days': trade_duration,
-                    'equity_after': current_equity
+                    'equity_after': current_equity,
+                    'ai_reasoning': ai_reasoning if ai_reasoning else "No AI reasoning"
                 })
             
             # Open short position
@@ -354,14 +393,16 @@ def simulate_trading(df, bullish_signals, bearish_signals):
             'pnl_pct': pnl_pct,
             'pnl_dollar': pnl_dollar,
             'duration_days': trade_duration,
-            'equity_after': final_equity
+            'equity_after': final_equity,
+            'ai_reasoning': "Final position close - no AI consultation"
         })
     
     # Add AI consultation stats to results
     ai_stats = {
         'consultations': ai_consultations,
         'rejections': ai_rejections,
-        'approval_rate': (ai_consultations - ai_rejections) / ai_consultations * 100 if ai_consultations > 0 else 0
+        'approval_rate': (ai_consultations - ai_rejections) / ai_consultations * 100 if ai_consultations > 0 else 0,
+        'reasonings': ai_reasonings
     }
     
     return trades, equity_curve, max_drawdown, ai_stats
