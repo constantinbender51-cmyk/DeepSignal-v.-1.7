@@ -1,7 +1,7 @@
+# forward_compound.py
 import pandas as pd, json, random, time, uuid, os
 from datetime import datetime, timedelta
 from deepseek_signal import get_signal
-from preselection import check_sma_crossover
 from typing import List, Dict
 
 CSV   = "xbtusd_1h_8y.csv"
@@ -25,7 +25,7 @@ def bar_exit(bar: Dict, slc: Slice) -> tuple:
         if bar["low"] <= stop_px:  return stop_px - SLIP, True
         if bar["high"]>= tgt_px:   return tgt_px + SLIP, False
     else:
-        if bar["high"]>= stop_px:  return stop_px + SLIP, False
+        if bar["high"]>= stop_px:  return stop_px + SLIP, True
         if bar["low"] <= tgt_px:   return tgt_px - SLIP, False
     return None, None
 
@@ -47,8 +47,6 @@ def net_pos(slices: List[Slice]) -> float:
 
 def run():
     df = pd.read_csv(CSV, parse_dates=["open_time"]).rename(columns={"open_time":"time"})
-    # Rename the 'close' column to 'c' to match the preselection function's expectations.
-    df.rename(columns={'close': 'c'}, inplace=True)
     candles = df.to_dict("records")
     start = random.randint(50, len(candles)-5000)   # leave runway
     slices: List[Slice] = []
@@ -84,26 +82,20 @@ def run():
             slices.remove(slc)
         closed_cnt += len(exits)
 
-        # ---------- new signal based on preselection ----------
-        # Get the slice of the last 50 candles for preselection check
-        last50 = candles[idx-50:idx]
+        # ---------- new signal ----------
+        last50 = [dict(time=c["time"].timestamp(),o=c["open"],h=c["high"],l=c["low"],c=c["close"],v=c["volume"])
+                  for c in candles[idx-50:idx]]
+        action, stop, target, reason = get_signal(last50)    
+        print("Action: ", action, "stop: ", stop, "target:", target, "reason: ", reason)
         
-        # Only generate a signal if the preselection criteria are met
-        if check_sma_crossover(last50):
-            action, stop, target, reason = get_signal(last50)    
-            print("Action: ", action, "stop: ", stop, "target:", target, "reason: ", reason)
-            
-            if action != "FLAT":
-                entry = bar["open"] * (1 + 5/3600/100)   # 5-sec slip
-                slices.append(Slice(action.lower(), entry, stop, target, idx, bar["time"]))
-        else:
-            # If preselection fails, inform the user and do nothing
-            print(f"[{bar['time']}] bar {idx} - No preselection criteria met. Skipping signal generation.")
+        if action != "FLAT":
+            entry = bar["open"] * (1 + 5/3600/100)   # 5-sec slip
+            slices.append(Slice(action.lower(), entry, stop, target, idx, bar["time"]))
 
         # ---------- logging ----------
         if idx % 100 == 0 or exits:
             print(f"[{bar['time']}] bar {idx}  net {net_pos(slices):+.4f}  slices {len(slices)}  "
-                  f"exits {len(exits)}")
+                  f"new {action}  exits {len(exits)}")
             
             # Log slices approaching 24-hour limit
             for slc in slices:
@@ -120,7 +112,7 @@ def run():
             avg = sum(t["pnl_pct"] for t in trades) / closed_cnt
             print(f"---- expectancy after {closed_cnt} slices: {avg:.3%} ----")
 
-        if closed_cnt >= 20:  # full target
+        if closed_cnt >= 200:  # full target
             break
 
     pd.DataFrame(trades).to_csv(OUT, index=False)
