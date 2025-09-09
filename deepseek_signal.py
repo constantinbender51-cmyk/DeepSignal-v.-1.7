@@ -13,7 +13,7 @@ def get_signal(last_50: list) -> Tuple[str, float, float, str]:
     prompt = (
         "You are a crypto strategist. If you can identify a trading signal in either direction, "
         "buy or sell and set stop/target to appropriate levels according to sound risk-management "
-        "practices. If unsure, reply FLAT, 0.0, 0.0, <string>. If no stop or target has been "
+        "practices. If unsure, FLAT, 0.0, 0.0, <string>. If no stop or target has been "
         "triggered after 24 hours, the trade will be automatically closed. "
         "Last 50 1-h candles:\n"
         f"{json.dumps(last_50)}\n"
