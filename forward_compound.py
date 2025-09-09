@@ -1,7 +1,7 @@
-# forward_compound.py
 import pandas as pd, json, random, time, uuid, os
 from datetime import datetime, timedelta
 from deepseek_signal import get_signal
+from preselection import check_sma_crossover
 from typing import List, Dict
 
 CSV   = "xbtusd_1h_8y.csv"
@@ -25,8 +25,8 @@ def bar_exit(bar: Dict, slc: Slice) -> tuple:
         if bar["low"] <= stop_px:  return stop_px - SLIP, True
         if bar["high"]>= tgt_px:   return tgt_px + SLIP, False
     else:
-        if bar["high"]>= stop_px:  return stop_px + SLIP, True
-        if bar["low"] <= tgt_px:   return tgt_px - SLIP, False
+        if bar["high"]>= stop_px:  return stop_px + SLIP, False
+        if bar["low"] <= tgt_px:   return tgt_px - SLIP, True
     return None, None
 
 def check_24h_exit(bar: Dict, slc: Slice) -> tuple:
@@ -83,9 +83,17 @@ def run():
         closed_cnt += len(exits)
 
         # ---------- new signal ----------
-        last50 = [dict(time=c["time"].timestamp(),o=c["open"],h=c["high"],l=c["low"],c=c["close"],v=c["volume"])
-                  for c in candles[idx-50:idx]]
-        action, stop, target, reason = get_signal(last50)    
+        # First, apply the preselection filter
+        preselection_candles = [dict(time=c["time"].timestamp(),o=c["open"],h=c["high"],l=c["low"],c=c["close"],v=c["volume"])
+                                for c in candles[idx-50:idx]]
+
+        # Only check for a signal if the preselection criteria are met
+        action = "FLAT" # Default to FLAT unless a signal is generated
+        stop, target, reason = None, None, None
+        
+        if len(preselection_candles) >= 50 and check_sma_crossover(preselection_candles, short_period=20, long_period=50):
+            action, stop, target, reason = get_signal(preselection_candles)
+        
         print("Action: ", action, "stop: ", stop, "target:", target, "reason: ", reason)
         
         if action != "FLAT":
