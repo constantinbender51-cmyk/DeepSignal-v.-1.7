@@ -94,24 +94,26 @@ def run():
                 slices.append(Slice(action.lower(), entry, stop, target, idx, bar["time"]))
 
         # ---------- logging ----------
+        # running PnL of everything that has already been closed
+        closed_pnl = sum(t['pnl_pct'] for t in trades)          # %-based
+        mark_px    = bar['close']                               # current price
+
         if idx % 100 == 0 or exits:
-            print(f"[{bar['time']}] bar {idx}  net {net_pos(slices):+.4f}  slices {len(slices)}  "
+            print(f"[{bar['time']}] bar {idx}  net {net_pos(slices):+.4f}  "
+                  f"mark {mark_px:.2f}  closed_pnl {closed_pnl:+.2%}  "
+                  f"slices {len(slices)}  "
                   f"new {action if not slices else 'WAIT'}  exits {len(exits)}")
-            
-            # Log slices approaching 24-hour limit
+
+            # warn on slices approaching 24 h
             for slc in slices:
-                current_time = bar["time"]
-                if isinstance(current_time, str):
-                    current_time = pd.to_datetime(current_time)
-                
-                time_diff = current_time - slc.birth_time
-                hours_held = time_diff.total_seconds() / 3600
-                if hours_held > 20:  # Warn when approaching 24 hours
-                    print(f"  WARNING: Slice {slc.uid} has been held for {hours_held:.1f} hours")
-        
+                age_h = (bar['time'] - slc.birth_time).total_seconds() / 3600
+                if age_h > 20:
+                    print(f"  WARNING: slice {slc.uid} age {age_h:.1f} h")
+
+        # periodic expectancy update
         if closed_cnt and closed_cnt % 50 == 0:
-            avg = sum(t["pnl_pct"] for t in trades) / closed_cnt
-            print(f"---- expectancy after {closed_cnt} slices: {avg:.3%} ----")
+            avg = sum(t['pnl_pct'] for t in trades) / closed_cnt
+            print(f'---- expectancy after {closed_cnt} slices: {avg:.3%} ----')
 
         if closed_cnt >= 20:  # full target
             break
