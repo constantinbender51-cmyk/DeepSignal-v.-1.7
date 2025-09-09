@@ -2,14 +2,15 @@ import pandas as pd
 import numpy as np
 
 def load_and_process_data():
-    """Load and process the CSV data"""
+    """Load and process the CSV data with proper ISO8601 parsing"""
     try:
-        # Load the CSV file
+        # Load the CSV file with proper datetime parsing
         df = pd.read_csv('xbtusd_1h_8y.csv')
         
-        # Convert time columns to datetime
-        df['open_time'] = pd.to_datetime(df['open_time'])
-        df['close_time'] = pd.to_datetime(df['close_time'])
+        # Convert time columns to datetime using ISO8601 format
+        # This handles both formats: with and without milliseconds
+        df['open_time'] = pd.to_datetime(df['open_time'], format='ISO8601')
+        df['close_time'] = pd.to_datetime(df['close_time'], format='ISO8601')
         
         # Set open_time as index for easier time-based calculations
         df.set_index('open_time', inplace=True)
@@ -30,7 +31,7 @@ def calculate_200_day_sma(df):
     """Calculate 200-day SMA (4800 hours)"""
     if df is None or len(df) < 4800:
         print(f"Not enough data for 200-day SMA calculation. Need at least 4800 hours, have {len(df)}")
-        return df, []
+        return df, [], []
     
     # Calculate 200-day SMA (200 days * 24 hours/day = 4800 hours)
     df['sma_200_day'] = df['close'].rolling(window=4800).mean()
@@ -147,14 +148,12 @@ def print_trade_results(trades):
     for i, trade in enumerate(trades, 1):
         pnl_sign = "+" if trade['pnl_pct'] >= 0 else ""
         trade_direction = "LONG" if trade['type'] == 'long_close' else "SHORT"
-        pnl_color = "\033[92m" if trade['pnl_pct'] >= 0 else "\033[91m"  # Green for profit, red for loss
-        reset_color = "\033[0m"
         
         print(f"Trade {i}: {trade_direction}")
         print(f"  Entry:    {trade['entry_time']} @ ${trade['entry_price']:.2f}")
         print(f"  Exit:     {trade['exit_time']} @ ${trade['exit_price']:.2f}")
         print(f"  Duration: {trade['duration_days']:.1f} days")
-        print(f"  PnL:      {pnl_color}{pnl_sign}{trade['pnl_pct']:.2f}%{reset_color}")
+        print(f"  PnL:      {pnl_sign}{trade['pnl_pct']:.2f}%")
         print("-" * 60)
         
         total_pnl += trade['pnl_pct']
