@@ -135,6 +135,7 @@ def print_trade_results(trades, equity_curve, max_drawdown, daily_equity):
     for t in trades:
         print(f"{t['type']:<7} {t['side']:<6} | {t['entry_time']} -> {t['exit_time']} | "
               f"P&L: {t['pnl_pct']:+.2f}% | Dur: {t['duration_days']:.1f}d | Eq: ${t['equity_after']:,.0f}")
+        time.sleep(0.01)
 
     print("-"*100)
 
