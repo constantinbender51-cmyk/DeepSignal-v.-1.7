@@ -59,6 +59,7 @@ def compute_smas(df: pd.DataFrame) -> tuple[float, float]:
 
 def get_position(api: KrakenFuturesApi) -> float:
     pos = api.get_open_positions()
+    log.info(pos)
     for p in pos.get("openPositions", []):
         if p["symbol"] == SYMBOL:
             side_mult = 1 if p["side"] == "long" else -1
