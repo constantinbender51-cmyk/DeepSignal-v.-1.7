@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 live_sma_cross.py
-200/5 SMA cross-over bot for Kraken-Futures PF_XBTUSD.
+200/5 SMA cross-over bot for Kraken-Futures pf_xbtusd.
 Places one market order per cross, sized to 5× available margin.
 Runs exactly at the top of every hour.
 Capability test: downloads OHLC, queries margin, sends a 0.0001 BTC order and verifies it appears in openPositions.
@@ -20,7 +20,7 @@ import requests
 from kraken_futures import KrakenFuturesApi
 from kraken_ohlc import get_ohlc
 
-SYMBOL          = "PF_XBTUSD"
+SYMBOL          = "pf_xbtusd"
 INTERVAL        = 60
 LEVERAGE        = 5
 KRAKEN_SPOT_PAIR= "XXBTZUSD"
@@ -71,10 +71,10 @@ def get_usd_available_margin(api: KrakenFuturesApi) -> float:
 def place_market_order(api: KrakenFuturesApi, order_size: float) -> Dict[str, Any]:
     side = "buy" if order_size > 0 else "sell"
     params = {
-        "orderType": "market",
+        "orderType": "mkt",
         "symbol": SYMBOL,
         "side": side,
-        "size": str(abs(order_size)),
+        "size": round(abs(order_size), 4),  # ensure numeric, 4-decimal
     }
     return api.send_order(params)
 
