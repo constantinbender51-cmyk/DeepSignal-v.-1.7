@@ -46,7 +46,7 @@ def fetch_btc_price() -> float:
     r = requests.get("https://futures.kraken.com/derivatives/api/v3/tickers", timeout=10)
     r.raise_for_status()
     for t in r.json()["tickers"]:
-        if t["symbol"] == SYMBOL:
+        if t["symbol"].upper() == SYMBOL.upper():   # <-- case-insensitive
             return float(t["markPrice"])
     raise RuntimeError(f"{SYMBOL} mark price not found")
 
@@ -94,7 +94,11 @@ def capability_test(api: KrakenFuturesApi):
         usd = get_usd_available_margin(api)
         log.info("Margin ok | available USD %.2f", usd)
 
-        # 3. tiny live order + position check
+        # 3. fetch_btc_price (case-insensitive symbol lookup)
+        btc_price = fetch_btc_price()
+        log.info("Mark-price fetch ok | %s = %.2f", SYMBOL, btc_price)
+
+        # 4. tiny live order + position check
         test_size = MIN_ORDER_BTC
         log.info("Sending test market order size=%s BTC", test_size)
         place_market_order(api, test_size)
