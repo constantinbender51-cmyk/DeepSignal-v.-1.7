@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 live_sma_cross.py
-200/5 SMA cross-over bot for Kraken-Futures PF_XBTCUSD.
+200/5 SMA cross-over bot for Kraken-Futures PF_XBTUSD.
 Places one market order per cross, sized to 5× available margin.
-Runs exactly at the top of every hour (12:00, 13:00 …).
-Performs a capability test on first launch (OHLC + margin query + 0-size order).
+Runs exactly at the top of every hour.
+Capability test: downloads OHLC, queries margin, sends a 0.0001 BTC order and verifies it appears in openPositions.
 """
 
 import os
@@ -93,9 +93,22 @@ def capability_test(api: KrakenFuturesApi):
         usd = get_usd_available_margin(api)
         log.info("Margin ok | available USD %.2f", usd)
 
-        # 3. 0-size order
-        place_market_order(api, 0.0)
-        log.info("0-size order ok")
+        # 3. tiny live order + position check
+        test_size = MIN_ORDER_BTC
+        log.info("Sending test market order size=%s BTC", test_size)
+        place_market_order(api, test_size)
+
+        time.sleep(2)  # give engine a moment
+        pos = get_position(api)
+        if abs(pos) < MIN_ORDER_BTC:
+            raise RuntimeError("Test order did not show in openPositions")
+        log.info("Test order ok | detected position %.6f BTC", pos)
+
+        # flatten immediately
+        flatten_size = -pos
+        place_market_order(api, flatten_size)
+        log.info("Flattened test position")
+
     except Exception as e:
         log.exception("Capability test FAILED: %s", e)
         raise
