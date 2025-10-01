@@ -60,7 +60,7 @@ def compute_smas(df: pd.DataFrame) -> tuple[float, float]:
 def get_position(api: KrakenFuturesApi) -> float:
     """Return signed BTC position size (long+, short-)."""
     raw = api.get_open_positions()    
-    log.info(pos) # full payload
+    log.info(raw) # full payload
     for p in raw.get("openPositions", []):  # walk the list
         if p.get("symbol") == SYMBOL:
             side_mult = 1 if p.get("side") == "long" else -1
