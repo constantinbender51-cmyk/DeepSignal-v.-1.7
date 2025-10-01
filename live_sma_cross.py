@@ -58,12 +58,12 @@ def compute_smas(df: pd.DataFrame) -> tuple[float, float]:
     return closes.tail(5).mean(), closes.tail(200).mean()
 
 def get_position(api: KrakenFuturesApi) -> float:
-    pos = api.get_open_positions()
-    log.info(pos)
-    for p in pos.get("openPositions", []):
-        if p["symbol"] == SYMBOL:
-            side_mult = 1 if p["side"] == "long" else -1
-            return float(p["size"]) * side_mult
+    """Return signed BTC position size (long+, short-)."""
+    raw = api.get_open_positions()          # full payload
+    for p in raw.get("openPositions", []):  # walk the list
+        if p.get("symbol") == SYMBOL:
+            side_mult = 1 if p.get("side") == "long" else -1
+            return float(p.get("size", 0)) * side_mult
     return 0.0
 
 def get_usd_available_margin(api: KrakenFuturesApi) -> float:
