@@ -4,7 +4,8 @@ live_sma_cross.py
 200/5 SMA cross-over bot for Kraken-Futures pf_xbtusd.
 Places one market order per cross, sized to 5× available margin.
 Runs exactly at the top of every hour.
-Capability test: downloads OHLC, queries margin, sends a 0.0001 BTC order and verifies it appears in openPositions.
+Capability test: downloads OHLC, queries margin, sends a 5× leveraged order
+and verifies it appears in openPositions.
 """
 
 import os
@@ -98,9 +99,9 @@ def capability_test(api: KrakenFuturesApi):
         btc_price = fetch_btc_price()
         log.info("Mark-price fetch ok | %s = %.2f", SYMBOL, btc_price)
 
-        # 4. tiny live order + position check
-        test_size = MIN_ORDER_BTC
-        log.info("Sending test market order size=%s BTC", test_size)
+        # 4. 5× leveraged test order + position check
+        test_size = round_to_tick(usd_to_btc(usd, btc_price) * LEVERAGE)
+        log.info("Sending test market order size=%s BTC (≈ 5× margin)", test_size)
         place_market_order(api, test_size)
 
         time.sleep(2)  # give engine a moment
