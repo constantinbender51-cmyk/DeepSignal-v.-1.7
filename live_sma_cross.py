@@ -47,7 +47,7 @@ def fetch_btc_price() -> float:
     r = requests.get("https://futures.kraken.com/derivatives/api/v3/tickers", timeout=10)
     r.raise_for_status()
     for t in r.json()["tickers"]:
-        if t["symbol"].upper() == SYMBOL.upper():   # <-- case-insensitive
+        if t["symbol"].upper() == SYMBOL.upper():   # case-insensitive
             return float(t["markPrice"])
     raise RuntimeError(f"{SYMBOL} mark price not found")
 
@@ -62,7 +62,7 @@ def get_position(api: KrakenFuturesApi) -> float:
     """Return signed BTC position size (long+, short-)."""
     raw = api.get_open_positions()
     for p in raw.get("openPositions", []):
-        if p.get("symbol", "").upper() == SYMBOL.upper():   # <-- ignore case
+        if p.get("symbol", "").upper() == SYMBOL.upper():
             side_mult = 1 if p.get("side") == "long" else -1
             return float(p.get("size", 0)) * side_mult
     return 0.0
@@ -76,7 +76,7 @@ def place_market_order(api: KrakenFuturesApi, order_size: float) -> Dict[str, An
         "orderType": "mkt",
         "symbol": SYMBOL,
         "side": side,
-        "size": round(abs(order_size), 4),  # ensure numeric, 4-decimal
+        "size": round(abs(order_size), 4),
     }
     return api.send_order(params)
 
@@ -95,7 +95,7 @@ def capability_test(api: KrakenFuturesApi):
         usd = get_usd_available_margin(api)
         log.info("Margin ok | available USD %.2f", usd)
 
-        # 3. fetch_btc_price (case-insensitive symbol lookup)
+        # 3. fetch_btc_price
         btc_price = fetch_btc_price()
         log.info("Mark-price fetch ok | %s = %.2f", SYMBOL, btc_price)
 
@@ -104,7 +104,7 @@ def capability_test(api: KrakenFuturesApi):
         log.info("Sending test market order size=%s BTC (≈ 5× margin)", test_size)
         place_market_order(api, test_size)
 
-        time.sleep(2)  # give engine a moment
+        time.sleep(2)
         pos = get_position(api)
         if abs(pos) < MIN_ORDER_BTC:
             raise RuntimeError("Test order did not show in openPositions")
@@ -161,27 +161,38 @@ def run():
                 prev_5, prev_200 = cur_5, cur_200
                 continue
 
-            # sizing
+            # ----------------------------------------------------------
+            # 1.  Flatten first so all margin is released
+            # ----------------------------------------------------------
+            current_qty = get_position(api)
+            flat_size   = -current_qty
+            if abs(flat_size) >= MIN_ORDER_BTC:
+                log.info("Flattening current position (%.6f BTC)", current_qty)
+                place_market_order(api, flat_size)
+                time.sleep(1)          # give the engine a tick
+
+            # ----------------------------------------------------------
+            # 2.  Re-check buying power now that margin is back
+            # ----------------------------------------------------------
             usd_margin = get_usd_available_margin(api)
             target_btc = round_to_tick(usd_to_btc(usd_margin, btc_price) * LEVERAGE)
             target_qty = target_btc if bullish else -target_btc
-            current_qty = get_position(api)
-            order_size = target_qty - current_qty
 
-            if abs(order_size) < MIN_ORDER_BTC:
-                log.info("Order size %.6f BTC too small, skipping", order_size)
-                prev_5, prev_200 = cur_5, cur_200
-                continue
-
-            log.info(
-                "%s cross | current=%.4f BTC | target=%.4f BTC | order=%.4f BTC",
-                "Bullish" if bullish else "Bearish",
-                current_qty,
-                target_qty,
-                order_size,
-            )
-            resp = place_market_order(api, order_size)
-            log.info("Order sent | recv=%s", resp)
+            # ----------------------------------------------------------
+            # 3.  Enter the new directional leg
+            # ----------------------------------------------------------
+            order_size = target_qty          # already flat, so no offset needed
+            if abs(order_size) >= MIN_ORDER_BTC:
+                log.info(
+                    "%s cross | flat then new target=%.4f BTC | order=%.4f BTC",
+                    "Bullish" if bullish else "Bearish",
+                    target_qty,
+                    order_size,
+                )
+                resp = place_market_order(api, order_size)
+                log.info("Order sent | recv=%s", resp)
+            else:
+                log.info("New target size %.6f BTC too small, skipping", order_size)
 
             prev_5, prev_200 = cur_5, cur_200
 
