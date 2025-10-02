@@ -95,11 +95,11 @@ def capability_test(api: KrakenFuturesApi):
         usd = get_usd_available_margin(api)
         log.info("Margin ok | available USD %.2f", usd)
 
-        # 3. fetch_btc_price
+        # 3. mark price
         btc_price = fetch_btc_price()
         log.info("Mark-price fetch ok | %s = %.2f", SYMBOL, btc_price)
 
-        # 4. 5× leveraged test order + position check
+        # 4. basic connectivity order + position check
         test_size = round_to_tick(usd_to_btc(usd, btc_price) * LEVERAGE)
         log.info("Sending test market order size=%s BTC (≈ 5× margin)", test_size)
         place_market_order(api, test_size)
@@ -110,10 +110,81 @@ def capability_test(api: KrakenFuturesApi):
             raise RuntimeError("Test order did not show in openPositions")
         log.info("Test order ok | detected position %.6f BTC", pos)
 
-        # flatten immediately
+        # flatten immediately so we start clean
         flatten_size = -pos
         place_market_order(api, flatten_size)
-        log.info("Flattened test position")
+        log.info("Flattened test position – account clean")
+
+        # ----------------------------------------------------------
+        # 5.  IMAGINED CROSS #1  –  bullish (identical logic to live loop)
+        # ----------------------------------------------------------
+        log.info("--- imagined bullish cross ---")
+        # --- 1. flatten (already flat, but keep same code path) ---
+        current_qty = get_position(api)
+        flat_size   = -current_qty
+        if abs(flat_size) >= MIN_ORDER_BTC:
+            log.info("Flattening current position (%.6f BTC)", current_qty)
+            place_market_order(api, flat_size)
+            time.sleep(1)
+
+        # --- 2. re-check buying power ---
+        usd_margin = get_usd_available_margin(api)
+        target_btc = round_to_tick(usd_to_btc(usd_margin, btc_price) * LEVERAGE)
+        target_qty = target_btc          # bullish => long
+
+        # --- 3. enter new leg ---
+        if abs(target_qty) >= MIN_ORDER_BTC:
+            log.info("Bullish cross | new target=%.4f BTC", target_qty)
+            resp = place_market_order(api, target_qty)
+            log.info("Order sent | recv=%s", resp)
+        else:
+            raise RuntimeError("Imagined bullish target too small")
+
+        # sanity-check
+        time.sleep(2)
+        pos = get_position(api)
+        if pos < MIN_ORDER_BTC:
+            raise RuntimeError("Imagined bullish cross did not leave us long")
+        log.info("Imagined bullish cross ok | position %.6f BTC", pos)
+
+        # ----------------------------------------------------------
+        # 6.  IMAGINED CROSS #2  –  bearish (same logic again)
+        # ----------------------------------------------------------
+        log.info("--- imagined bearish cross ---")
+        # --- 1. flatten ---
+        current_qty = get_position(api)
+        flat_size   = -current_qty
+        if abs(flat_size) >= MIN_ORDER_BTC:
+            log.info("Flattening current position (%.6f BTC)", current_qty)
+            place_market_order(api, flat_size)
+            time.sleep(1)
+
+        # --- 2. re-check buying power ---
+        usd_margin = get_usd_available_margin(api)
+        target_btc = round_to_tick(usd_to_btc(usd_margin, btc_price) * LEVERAGE)
+        target_qty = -target_btc         # bearish => short
+
+        # --- 3. enter new leg ---
+        if abs(target_qty) >= MIN_ORDER_BTC:
+            log.info("Bearish cross | new target=%.4f BTC", target_qty)
+            resp = place_market_order(api, target_qty)
+            log.info("Order sent | recv=%s", resp)
+        else:
+            raise RuntimeError("Imagined bearish target too small")
+
+        # sanity-check
+        time.sleep(2)
+        pos = get_position(api)
+        if pos > -MIN_ORDER_BTC:
+            raise RuntimeError("Imagined bearish cross did not leave us short")
+        log.info("Imagined bearish cross ok | position %.6f BTC", pos)
+
+        # ----------------------------------------------------------
+        # 7.  Flatten once more so account ends flat
+        # ----------------------------------------------------------
+        flatten_size = -pos
+        place_market_order(api, flatten_size)
+        log.info("Flattened after imagined crosses – account flat")
 
     except Exception as e:
         log.exception("Capability test FAILED: %s", e)
