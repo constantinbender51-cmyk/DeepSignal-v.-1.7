@@ -68,8 +68,26 @@ def run(daily, lev=2, fee=0.0025, stop=0.01, cash=100):
             'trades': trades}
 
 # ------------------------------------------------------------------
-# 3. fire once
+# 3. buy-and-hold benchmark (100 USD → BTC → 100 USD)
+# ------------------------------------------------------------------
+def buy_and_hold(daily, fee=0.0025, cash=100):
+    first_close = daily['close'].iloc[0]
+    last_close  = daily['close'].iloc[-1]
+    # buy as much BTC as 100 USD affords after open fee
+    shares = cash / (first_close * (1 + fee))
+    # sell all BTC at last close, pay exit fee
+    final  = shares * last_close * (1 - fee)
+    return {'final': final,
+            'return_%': (final/cash - 1)*100,
+            'trades': 2}          # 1 buy + 1 sell
+
+# ------------------------------------------------------------------
+# 4. fire once
 # ------------------------------------------------------------------
 if __name__ == '__main__':
     daily = load_daily()
-    print(run(daily))
+    ma_result = run(daily)
+    bh_result = buy_and_hold(daily)
+
+    print('50-/200-MA cross:', ma_result)
+    print('Buy-and-hold:   ', bh_result)
