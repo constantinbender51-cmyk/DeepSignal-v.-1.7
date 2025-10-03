@@ -42,7 +42,7 @@ def run_one_sma(daily_df, lookback=200, leverage=1, initial_margin=100,
     """
     Runs the 50/200 SMA-cross strategy once.
     Returns a dict with all common performance metrics plus
-    max_loss_trade, max_gain_trade, n_losses, n_gains (no prints).
+    max_loss_trade, max_gain_trade, n_losses, n_gains, total_fees (no prints).
     """
     if daily_df is None or daily_df.empty:
         return None
@@ -63,11 +63,11 @@ def run_one_sma(daily_df, lookback=200, leverage=1, initial_margin=100,
     entry_price = 0.0
     trades = 0
 
-    # ---- new tracking variables ----
     max_gain_trade = 0.0
     max_loss_trade = 0.0
     n_gains = 0
     n_losses = 0
+    total_fees = 0.0          # <── NEW
 
     def pos_size(price):
         return balance * leverage / price
@@ -78,14 +78,12 @@ def run_one_sma(daily_df, lookback=200, leverage=1, initial_margin=100,
         ma_fast = row['sma_fast']
         prev_side = side
 
-        # 1. raw 200-SMA direction
         raw_side = 0
         if price > ma_slow:
             raw_side = 1
         elif price < ma_slow:
             raw_side = -1
 
-        # 2. only act if 50-SMA agrees
         if raw_side == 1 and ma_fast > ma_slow:
             side = 1
         elif raw_side == -1 and ma_fast < ma_slow:
@@ -94,7 +92,6 @@ def run_one_sma(daily_df, lookback=200, leverage=1, initial_margin=100,
             side = 0
 
         # --- intra-day stop check ---
-        stopped = False
         if position != 0:
             stop_dist = entry_price * stop_pct
             if position > 0:                       # long
@@ -103,7 +100,7 @@ def run_one_sma(daily_df, lookback=200, leverage=1, initial_margin=100,
                     pnl = position * (stop_price - entry_price)
                     fee_cost = abs(pnl) * fee
                     balance += pnl - fee_cost
-                    total_fees += fee_cost
+                    total_fees += fee_cost         # <── NEW
                     if pnl > 0:
                         n_gains += 1
                         max_gain_trade = max(max_gain_trade, pnl)
@@ -111,14 +108,16 @@ def run_one_sma(daily_df, lookback=200, leverage=1, initial_margin=100,
                         n_losses += 1
                         max_loss_trade = min(max_loss_trade, pnl)
                     position = 0.0
-                    stopped = True                 # mark stop but do NOT ++trades yet
+                    side = 0
+                    prev_side = 0
+                    trades += 1
             else:                                  # short
                 stop_price = entry_price + stop_dist
                 if row['high'] >= stop_price:
                     pnl = position * (stop_price - entry_price)
                     fee_cost = abs(pnl) * fee
                     balance += pnl - fee_cost
-                    total_fees += fee_cost
+                    total_fees += fee_cost         # <── NEW
                     if pnl > 0:
                         n_gains += 1
                         max_gain_trade = max(max_gain_trade, pnl)
@@ -126,51 +125,50 @@ def run_one_sma(daily_df, lookback=200, leverage=1, initial_margin=100,
                         n_losses += 1
                         max_loss_trade = min(max_loss_trade, pnl)
                     position = 0.0
-                    stopped = True
+                    side = 0
+                    prev_side = 0
+                    trades += 1
 
-        # --- cross at close if still flat OR side changed ---
-        if side != prev_side:                      # real regime change
+        # --- cross at close if still flat ---
+        if side != prev_side and side != 0:
             if position != 0:                      # close old leg
                 pnl = position * (price - entry_price)
                 fee_cost = abs(pnl) * fee
                 balance += pnl - fee_cost
-                total_fees += fee_cost
+                total_fees += fee_cost             # <── NEW
                 if pnl > 0:
                     n_gains += 1
                     max_gain_trade = max(max_gain_trade, pnl)
                 else:
                     n_losses += 1
                     max_loss_trade = min(max_loss_trade, pnl)
-                trades += 1                        # count only when side flips
-            if side != 0:                          # enter new leg
-                entry_price = price
-                notional = pos_size(price) * side
-                fee_cost = abs(notional * price) * fee
-                balance -= fee_cost
-                total_fees += fee_cost
-                position = notional
-                if stopped:                        # stop counted above, do not count again
-                    trades -= 1
+                trades += 1
+            entry_price = price
+            notional = pos_size(price) * side
+            fee_cost = abs(notional * price) * fee
+            balance -= fee_cost
+            total_fees += fee_cost                 # <── NEW
+            position = notional
 
-        # mark-to-market at close
+        # mark-to-market
         mtm = position * (price - entry_price) if position else 0.0
         eq = balance + mtm
         max_bal = max(max_bal, eq)
         dd = (max_bal - eq) / max_bal
         max_dd = max(max_dd, dd)
 
-    # final exit if still in position
+    # --- final exit if still in position ---
     if position != 0:
         pnl = position * (df['close'].iloc[-1] - entry_price)
-        balance += pnl - abs(pnl) * fee
-        # ---- track trade stats ----
+        fee_cost = abs(pnl) * fee
+        balance += pnl - fee_cost
+        total_fees += fee_cost                     # <── NEW
         if pnl > 0:
             n_gains += 1
             max_gain_trade = max(max_gain_trade, pnl)
         else:
             n_losses += 1
             max_loss_trade = min(max_loss_trade, pnl)
-        # ---------------------------
         trades += 1
 
     final_eq = balance
@@ -183,7 +181,8 @@ def run_one_sma(daily_df, lookback=200, leverage=1, initial_margin=100,
         'max_loss_trade': max_loss_trade,
         'max_gain_trade': max_gain_trade,
         'n_losses': n_losses,
-        'n_gains': n_gains
+        'n_gains': n_gains,
+        'total_fees': total_fees               # <── NEW
     }
 
 
@@ -213,8 +212,9 @@ def run_sma_cross(daily_df):
               f"Best: {r['max_gain_trade']:8.2f} | "
               f"Worst: {r['max_loss_trade']:8.2f} | "
               f"W: {r['n_gains']:3.0f} | "
-              f"L: {r['n_losses']:3.0f}")
-    print("="*95)
+              f"L: {r['n_losses']:3.0f} | "
+              f"Fees: {r['total_fees']:8.2f}")      # <── NEW
+    print("="*108)                                   # lengthen separator
 
 # ------------------------------------------------------------------
 # 4. ONE-CLICK RUN
