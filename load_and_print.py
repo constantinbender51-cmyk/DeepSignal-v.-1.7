@@ -39,108 +39,111 @@ def print_daily_candles(daily_df):
         time.sleep(0.01)
 
 # ------------------------------------------------------------------
-# 3. 200-SMA CROSS STRATEGY (5× lev, 100 USD margin, 2 % stop-loss)
+# 3. SINGLE SMA CROSS STRATEGY (parameterised look-back)
 # ------------------------------------------------------------------
+def run_one_sma(daily_df, lookback=200, leverage=5, initial_margin=100,
+                fee=0.0025, stop_pct=0.02):
+    """Run ONE SMA-cross leg and return a summary dict."""
+    if daily_df is None or daily_df.empty:
+        return None
+
+    close = daily_df['close']
+    sma = close.rolling(lookback).mean()
+    df = daily_df.copy()
+    df['sma'] = sma
+    df.dropna(inplace=True)
+
+    position = 0.0
+    balance = initial_margin
+    max_bal = balance
+    max_dd = 0.0
+    side = 0
+    entry_price = 0.0
+
+    def pos_size(price):
+        return balance * leverage / price
+
+    for ts, row in df.iterrows():
+        price = row['close']
+        ma = row['sma']
+
+        prev_side = side
+
+        # signal
+        if price > ma and side != 1:
+            side = 1
+        elif price < ma and side != -1:
+            side = -1
+
+        # stop-loss
+        if position != 0:
+            stop_dist = entry_price * stop_pct
+            if (position > 0 and price <= entry_price - stop_dist) or \
+               (position < 0 and price >= entry_price + stop_dist):
+                stop_price = entry_price - stop_dist if position > 0 else entry_price + stop_dist
+                pnl = position * (stop_price - entry_price)
+                balance += pnl - abs(pnl) * fee
+                position = 0.0
+                side = 0
+                prev_side = 0
+
+        # execute cross
+        if side != prev_side and side != 0:
+            if position != 0:
+                pnl = position * (price - entry_price)
+                balance += pnl - abs(pnl) * fee
+            entry_price = price
+            position = pos_size(price) * side
+            balance -= abs(position * price) * fee
+
+        # mark-to-market
+        mtm = position * (price - entry_price) if position else 0.0
+        eq = balance + mtm
+        max_bal = max(max_bal, eq)
+        dd = (max_bal - eq) / max_bal
+        max_dd = max(max_dd, dd)
+
+        # print identical format to original script
+        print(f"{ts.date()} | "
+              f"O:{row['open']:.2f} H:{row['high']:.2f} L:{row['low']:.2f} C:{row['close']:.2f} "
+              f"V:{row['volume']:.0f} | SMA:{ma:.2f} | "
+              f"{'LONG' if side==1 else 'SHORT' if side==-1 else 'FLAT'} | "
+              f"Eq:{eq:.2f} USD")
+        time.sleep(0.01)
+
+    final_eq = balance + (position * (df['close'].iloc[-1] - entry_price) if position else 0)
+    return {
+        'lookback': lookback,
+        'final_eq': final_eq,
+        'return_pct': (final_eq / initial_margin - 1) * 100,
+        'max_dd_pct': max_dd * 100
+    }
+
+
 # ------------------------------------------------------------------
-# 3. 5-SMA CROSS STRATEGY (200…196, 5× lev, 100 USD each, 2 % SL, 0.25 % fee)
+# 4. RUN MULTIPLE SMAs (200,199,198,197,196 for now)
 # ------------------------------------------------------------------
-def run_sma_cross(daily_df, leverage=5, initial_margin=100, fee=0.0025, stop_pct=0.02):
-    """Trade five parallel SMA-cross legs (200,199,198,197,196)."""
+def run_sma_cross(daily_df):
+    """Run each SMA independently and print a table."""
     if daily_df is None or daily_df.empty:
         print("No data – nothing to back-test.")
         return
 
-    close = daily_df['close']
-    lookbacks = [200, 199, 198, 197, 196]
-    smas = {n: close.rolling(n).mean() for n in lookbacks}
+    lookbacks = [200, 199, 198, 197, 196]          # easy to extend to range(1,201)
+    results = []
 
-    class Leg:
-        def __init__(self, n):
-            self.n = n
-            self.side = 0
-            self.position = 0.0
-            self.entry_price = 0.0
-            self.balance = initial_margin
-            self.equity = initial_margin  # <-- add this line
-        
-        def pos_size(self, price):
-            return self.balance * leverage / price
+    for lb in lookbacks:
+        print(f"\n========== SMA {lb} ==========")
+        res = run_one_sma(daily_df, lookback=lb)
+        if res:
+            results.append(res)
 
-    legs = {n: Leg(n) for n in lookbacks}
-    max_bal_total = initial_margin * len(lookbacks)
-    max_dd_total = 0.0
-
-    # --- main loop -------------------------------------------------------------
-    for ts, row in daily_df.iterrows():
-        price = row['close']
-
-        for n, leg in legs.items():
-            sma = smas[n].loc[ts]
-
-            # skip until SMA available
-            if pd.isna(sma):
-                continue
-
-            prev_side = leg.side
-
-            # --- signal generation ---------------------------------------------
-            if price > sma and leg.side != 1:
-                leg.side = 1
-            elif price < sma and leg.side != -1:
-                leg.side = -1
-
-            # --- stop-loss check (while in position) -----------------------------
-            if leg.position != 0:
-                stop_dist = leg.entry_price * stop_pct
-                if (leg.position > 0 and price <= leg.entry_price - stop_dist) or \
-                   (leg.position < 0 and price >= leg.entry_price + stop_dist):
-                    stop_price = leg.entry_price - stop_dist if leg.position > 0 else leg.entry_price + stop_dist
-                    pnl = leg.position * (stop_price - leg.entry_price)
-                    leg.balance += pnl - abs(pnl) * fee
-                    leg.position = 0.0
-                    leg.side = 0
-                    leg.entry_price = 0.0
-                    prev_side = 0  # force fresh cross before next entry
-
-            # --- execute SMA-cross trade only on side change --------------------
-            if leg.side != prev_side and leg.side != 0:
-                # close old position if still open
-                if leg.position != 0:
-                    pnl = leg.position * (price - leg.entry_price)
-                    leg.balance += pnl - abs(pnl) * fee
-                # open new position
-                leg.entry_price = price
-                leg.position = leg.pos_size(price) * leg.side
-                leg.balance -= abs(leg.position * price) * fee
-
-            # --- mark-to-market -------------------------------------------------
-            mtm = leg.position * (price - leg.entry_price) if leg.position != 0 else 0.0
-            leg.equity = leg.balance + mtm
-
-        # --- portfolio-level stats ---------------------------------------------
-        total_eq = sum(leg.equity for leg in legs.values())
-        max_bal_total = max(max_bal_total, total_eq)
-        dd_total = (max_bal_total - total_eq) / max_bal_total
-        max_dd_total = max(max_dd_total, dd_total)
-
-        # --- pretty print: one line per day ------------------------------------
-        leg_str = " | ".join(
-            f"SMA{n}:{leg.side:+1.0f} {leg.equity:6.2f}" for n, leg in legs.items()
-        )
-        print(f"{ts.date()} | {leg_str} | Total:{total_eq:8.2f}")
-        time.sleep(0.01)
-
-    # --- final summary ---------------------------------------------------------
-    final_equities = {n: leg.equity for n, leg in legs.items()}
-    final_total = sum(final_equities.values())
-    print("\n===== 5-LEG SUMMARY (0.25 % fee, 2 % SL, 5× lev) =====")
-    for n, eq in final_equities.items():
-        print(f"SMA{n:3d}  : {eq:8.2f} USD  |  return {((eq/initial_margin-1)*100):+6.2f} %")
-    print(f"Combined : {final_total:8.2f} USD  |  return {((final_total/(initial_margin*5)-1)*100):+6.2f} %")
-    print(f"Max DD   : {max_dd_total*100:6.2f} %")
-    print("="*60)
-
-    return {"legs": final_equities, "total": final_total, "max_dd": max_dd_total}
+    # summary table
+    print("\n===== INDEPENDENT RUNS SUMMARY =====")
+    for r in results:
+        print(f"SMA{r['lookback']:3.0f} | Final: {r['final_eq']:8.2f} USD | "
+              f"Return: {r['return_pct']:+7.2f} % | Max DD: {r['max_dd_pct']:6.2f} %")
+    print("="*42)
 # ------------------------------------------------------------------
 # 4. ONE-CLICK RUN
 # ------------------------------------------------------------------
