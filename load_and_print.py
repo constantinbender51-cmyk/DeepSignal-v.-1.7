@@ -37,7 +37,7 @@ def print_daily_candles(daily_df):
 # 3-bis. SINGLE SMA CROSS STRATEGY – 50/200 CROSS FILTER
 # ------------------------------------------------------------------
 def run_one_sma(daily_df, lookback=200, leverage=5, initial_margin=100,
-                fee=0.0025, stop_pct=0.10):
+                fee=0.0025, stop_pct=0.02):
     if daily_df is None or daily_df.empty:
         return None
 
