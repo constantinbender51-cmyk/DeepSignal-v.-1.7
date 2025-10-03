@@ -54,15 +54,15 @@ def run_sma_cross(daily_df, leverage=5, initial_margin=100, fee=0.0025, stop_pct
     lookbacks = [200, 199, 198, 197, 196]
     smas = {n: close.rolling(n).mean() for n in lookbacks}
 
-    # --- per-leg state ---------------------------------------------------------
     class Leg:
         def __init__(self, n):
             self.n = n
-            self.side = 0          # 1 long, -1 short, 0 flat
+            self.side = 0
             self.position = 0.0
             self.entry_price = 0.0
-            self.balance = initial_margin  # 100 USD dedicated to this leg
-
+            self.balance = initial_margin
+            self.equity = initial_margin  # <-- add this line
+        
         def pos_size(self, price):
             return self.balance * leverage / price
 
