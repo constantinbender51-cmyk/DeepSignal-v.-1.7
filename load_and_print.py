@@ -42,8 +42,7 @@ def print_daily_candles(daily_df):
 # 3. SINGLE SMA CROSS STRATEGY (parameterised look-back)
 # ------------------------------------------------------------------
 def run_one_sma(daily_df, lookback=200, leverage=5, initial_margin=100,
-                fee=0.0025, stop_pct=0.02):
-    """Run ONE SMA-cross leg and return a summary dict."""
+                fee=0.0025, stop_pct=0.10):          # stop_pct now 10 %
     if daily_df is None or daily_df.empty:
         return None
 
@@ -59,6 +58,7 @@ def run_one_sma(daily_df, lookback=200, leverage=5, initial_margin=100,
     max_dd = 0.0
     side = 0
     entry_price = 0.0
+    trades = 0
 
     def pos_size(price):
         return balance * leverage / price
@@ -69,41 +69,52 @@ def run_one_sma(daily_df, lookback=200, leverage=5, initial_margin=100,
 
         prev_side = side
 
-        # signal
+        # signal generation (on close)
         if price > ma and side != 1:
             side = 1
         elif price < ma and side != -1:
             side = -1
 
-        # stop-loss
+        # ---------- intra-day stop check BEFORE the close ----------
         if position != 0:
             stop_dist = entry_price * stop_pct
-            if (position > 0 and price <= entry_price - stop_dist) or \
-               (position < 0 and price >= entry_price + stop_dist):
-                stop_price = entry_price - stop_dist if position > 0 else entry_price + stop_dist
-                pnl = position * (stop_price - entry_price)
-                balance += pnl - abs(pnl) * fee
-                position = 0.0
-                side = 0
-                prev_side = 0
+            if position > 0:                       # long
+                stop_price = entry_price - stop_dist
+                if row['low'] <= stop_price:       # 10 % stop touched
+                    pnl = position * (stop_price - entry_price)
+                    balance += pnl - abs(pnl) * fee
+                    position = 0.0
+                    side = 0
+                    prev_side = 0
+                    trades += 1
+            else:                                  # short
+                stop_price = entry_price + stop_dist
+                if row['high'] >= stop_price:      # 10 % stop touched
+                    pnl = position * (stop_price - entry_price)
+                    balance += pnl - abs(pnl) * fee
+                    position = 0.0
+                    side = 0
+                    prev_side = 0
+                    trades += 1
+        # -----------------------------------------------------------
 
-        # execute cross
+        # if still flat after any stop, execute cross at current close
         if side != prev_side and side != 0:
-            if position != 0:
+            if position != 0:                      # close old leg first
                 pnl = position * (price - entry_price)
                 balance += pnl - abs(pnl) * fee
+                trades += 1
             entry_price = price
             position = pos_size(price) * side
             balance -= abs(position * price) * fee
 
-        # mark-to-market
+        # mark-to-market at close
         mtm = position * (price - entry_price) if position else 0.0
         eq = balance + mtm
         max_bal = max(max_bal, eq)
         dd = (max_bal - eq) / max_bal
         max_dd = max(max_dd, dd)
 
-        # print identical format to original script
         print(f"{ts.date()} | "
               f"O:{row['open']:.2f} H:{row['high']:.2f} L:{row['low']:.2f} C:{row['close']:.2f} "
               f"V:{row['volume']:.0f} | SMA:{ma:.2f} | "
@@ -111,14 +122,20 @@ def run_one_sma(daily_df, lookback=200, leverage=5, initial_margin=100,
               f"Eq:{eq:.2f} USD")
         time.sleep(0.01)
 
-    final_eq = balance + (position * (df['close'].iloc[-1] - entry_price) if position else 0)
+    # final exit if still in position
+    if position != 0:
+        pnl = position * (df['close'].iloc[-1] - entry_price)
+        balance += pnl - abs(pnl) * fee
+        trades += 1
+
+    final_eq = balance
     return {
         'lookback': lookback,
         'final_eq': final_eq,
         'return_pct': (final_eq / initial_margin - 1) * 100,
-        'max_dd_pct': max_dd * 100
+        'max_dd_pct': max_dd * 100,
+        'trades': trades
     }
-
 
 # ------------------------------------------------------------------
 # 4. RUN MULTIPLE SMAs (200,199,198,197,196 for now)
