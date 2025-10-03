@@ -39,10 +39,10 @@ def print_daily_candles(daily_df):
         time.sleep(0.01)
 
 # ------------------------------------------------------------------
-# 3. 200-SMA CROSS STRATEGY (5× lev, 100 USD margin)
+# 3. 200-SMA CROSS STRATEGY (5× lev, 100 USD margin, 2 % stop-loss)
 # ------------------------------------------------------------------
 def run_sma_cross(daily_df, leverage=5, initial_margin=100, fee=0.0005, stop_pct=0.02):
-    """200-SMA cross strategy with 2 % stop-loss."""
+    """200-SMA cross strategy with 2 % stop-loss (→ 10 % max loss on 5× lev)."""
     if daily_df is None or daily_df.empty:
         print("No data – nothing to back-test.")
         return
@@ -57,7 +57,7 @@ def run_sma_cross(daily_df, leverage=5, initial_margin=100, fee=0.0005, stop_pct
     balance = initial_margin
     max_bal = balance
     max_dd = 0.0
-    side = 0
+    side = 0                # 1 long, -1 short, 0 flat
     entry_price = 0.0
 
     def pos_size(price):
@@ -68,27 +68,28 @@ def run_sma_cross(daily_df, leverage=5, initial_margin=100, fee=0.0005, stop_pct
         sma = row['sma200']
 
         prev_side = side
-        # signal generation
+
+        # --- signal generation -------------------------------------------------
         if price > sma and side != 1:
             side = 1
         elif price < sma and side != -1:
             side = -1
-        # else side unchanged
 
-        # stop-loss check while in trade
+        # --- stop-loss check (while position open) -----------------------------
         if position != 0:
             stop_dist = entry_price * stop_pct
             if (position > 0 and price <= entry_price - stop_dist) or \
                (position < 0 and price >= entry_price + stop_dist):
-                # stop hit – close at stop price
+                # stop hit → close at stop price
                 stop_price = entry_price - stop_dist if position > 0 else entry_price + stop_dist
                 pnl = position * (stop_price - entry_price)
                 balance += pnl - abs(pnl) * fee
                 position = 0.0
                 side = 0          # go flat
                 entry_price = 0.0
+                prev_side = 0     # force fresh cross before next entry
 
-        # execute SMA cross trade only if side changed (and no stop just happened)
+        # --- execute SMA cross trade only on side change -----------------------
         if side != prev_side and side != 0:
             # close old position if still open
             if position != 0:
@@ -99,13 +100,14 @@ def run_sma_cross(daily_df, leverage=5, initial_margin=100, fee=0.0005, stop_pct
             position = pos_size(price) * side
             balance -= abs(position * price) * fee
 
-        # mark-to-market
+        # --- mark-to-market ----------------------------------------------------
         mtm_pnl = position * (price - entry_price) if position != 0 else 0.0
         eq = balance + mtm_pnl
         max_bal = max(max_bal, eq)
         dd = (max_bal - eq) / max_bal
         max_dd = max(max_dd, dd)
 
+        # --- pretty print ------------------------------------------------------
         print(f"{ts.date()} | "
               f"O:{row['open']:.2f} H:{row['high']:.2f} L:{row['low']:.2f} C:{row['close']:.2f} "
               f"V:{row['volume']:.0f} | SMA:{sma:.2f} | "
@@ -113,6 +115,7 @@ def run_sma_cross(daily_df, leverage=5, initial_margin=100, fee=0.0005, stop_pct
               f"Eq:{eq:.2f} USD")
         time.sleep(0.01)
 
+    # --- summary -------------------------------------------------------------
     final_eq = balance + (position * (daily_df['close'].iloc[-1] - entry_price) if position else 0)
     print("\n===== STRATEGY SUMMARY =====")
     print(f"Initial margin : {initial_margin:,.2f} USD")
@@ -127,3 +130,4 @@ def run_sma_cross(daily_df, leverage=5, initial_margin=100, fee=0.0005, stop_pct
 if __name__ == "__main__":
     daily = load_and_convert_to_daily()
     run_sma_cross(daily)
+    
