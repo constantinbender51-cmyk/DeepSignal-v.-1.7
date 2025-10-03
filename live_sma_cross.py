@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 live_sma_cross_daily.py
-5-SMA / 200-SMA cross-over bot for Kraken-Futures pf_xbtusd – DAILY version.
+16-SMA / 128-SMA cross-over bot for Kraken-Futures pf_xbtusd – DAILY version.
 Single-order logic: every day at 00:01 UTC send one market order that
 moves the BTC exposure to 5 × portfolioValue (in BTC terms).
 """
@@ -50,16 +50,16 @@ def fetch_btc_price() -> float:
     raise RuntimeError(f"{SYMBOL} mark price not found")
 
 # ------------------------------------------------------------------
-# 90-/30-day SMA cross – DAILY version
+# 16-/128-day SMA cross – DAILY version
 # ------------------------------------------------------------------
-def get_ohlc_daily(n: int = 100) -> pd.DataFrame:
-    """Pull enough history for 90-day SMA (plus a small buffer)."""
+def get_ohlc_daily(n: int = 150) -> pd.DataFrame:
+    """Pull enough history for 128-day SMA (plus a small buffer)."""
     return get_ohlc(KRAKEN_SPOT_PAIR, INTERVAL).tail(n)
 
 def compute_smas(df: pd.DataFrame) -> tuple[float, float]:
-    """Return (30-day SMA, 90-day SMA)."""
+    """Return (16-day SMA, 128-day SMA)."""
     closes = df["close"]
-    return closes.tail(30).mean(), closes.tail(90).mean()
+    return closes.tail(16).mean(), closes.tail(128).mean()
 
 def get_position(api: KrakenFuturesApi) -> float:
     raw = api.get_open_positions()
@@ -91,9 +91,9 @@ def place_market_order(api: KrakenFuturesApi, order_size: float) -> Dict[str, An
 def capability_test(api: KrakenFuturesApi):
     log.info("=== capability test start ===")
     try:
-        df = get_ohlc_daily(220)
-        sma5, sma200 = compute_smas(df)
-        log.info("OHLC ok | 5-SMA=%.2f 200-SMA=%.2f", sma5, sma200)
+        df = get_ohlc_daily(150)
+        sma16, sma128 = compute_smas(df)
+        log.info("OHLC ok | 16-SMA=%.2f 128-SMA=%.2f", sma16, sma128)
 
         pv_usd = get_portfolio_value_usd(api)
         log.info("Portfolio value ok | %.2f USD", pv_usd)
@@ -151,8 +151,8 @@ def run():
     capability_test(api)
 
     log.info("Seeding SMA history…")
-    df = get_ohlc_daily(220)
-    prev_5, prev_200 = compute_smas(df)
+    df = get_ohlc_daily(150)
+    prev_16, prev_128 = compute_smas(df)
 
     log.info("Entering main loop – trades every day at 00:01 UTC")
     while True:
@@ -166,16 +166,16 @@ def run():
             time.sleep(seconds_until)
 
             # refresh
-            df = get_ohlc_daily(220)
-            cur_5, cur_200 = compute_smas(df)
+            df = get_ohlc_daily(150)
+            cur_16, cur_128 = compute_smas(df)
             btc_price = fetch_btc_price()
 
-            bullish = prev_5 <= prev_200 and cur_5 > cur_200
-            bearish = prev_5 >= prev_200 and cur_5 < cur_200
+            bullish = prev_16 <= prev_128 and cur_16 > cur_128
+            bearish = prev_16 >= prev_128 and cur_16 < cur_128
 
             if not (bullish or bearish):
-                log.info("No cross | 5-SMA=%.2f 200-SMA=%.2f", cur_5, cur_200)
-                prev_5, prev_200 = cur_5, cur_200
+                log.info("No cross | 16-SMA=%.2f 128-SMA=%.2f", cur_16, cur_128)
+                prev_16, prev_128 = cur_16, cur_128
                 continue
 
             # single-order logic
@@ -193,7 +193,7 @@ def run():
                 resp = place_market_order(api, delta_btc)
                 log.info("Order sent | recv=%s", resp)
 
-            prev_5, prev_200 = cur_5, cur_200
+            prev_16, prev_128 = cur_16, cur_128
 
         except KeyboardInterrupt:
             log.info("User interrupt – shutting down")
