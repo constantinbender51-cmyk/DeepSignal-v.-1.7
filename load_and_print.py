@@ -2,7 +2,7 @@ import pandas as pd
 from datetime import datetime
 
 # ------------------------------------------------------------------
-# 1. load hourly csv → daily candles + 5-/200-MA  (200/5 cross)
+# 1. load hourly csv → daily candles + 19-/29-MA  (19/29 cross)
 # ------------------------------------------------------------------
 def load_daily(path='xbtusd_1h_8y.csv'):
     df = pd.read_csv(path)
@@ -16,8 +16,8 @@ def load_daily(path='xbtusd_1h_8y.csv'):
                      'low':  'min',
                      'close':'last'})
                .dropna())
-    daily['sma5']   = daily['close'].rolling(5).mean()    # fast
-    daily['sma200'] = daily['close'].rolling(200).mean()  # slow
+    daily['sma19'] = daily['close'].rolling(19).mean()   # fast
+    daily['sma29'] = daily['close'].rolling(29).mean()   # slow
     return daily.dropna()
 
 # ------------------------------------------------------------------
@@ -30,8 +30,8 @@ def _engine(daily, lev=1, fee=0.0025, stop=1, cash=100):
     trades = 0
     trade_log = []
 
-    prev_fast = daily['sma5'].shift(1)    # fast = 5
-    prev_slow = daily['sma200'].shift(1)  # slow = 200
+    prev_fast = daily['sma19'].shift(1)   # fast = 19
+    prev_slow = daily['sma29'].shift(1)   # slow = 29
 
     for i, (date, r) in enumerate(daily.iterrows()):
         # 1. stop exit
@@ -45,9 +45,9 @@ def _engine(daily, lev=1, fee=0.0025, stop=1, cash=100):
                 pos = 0
                 trades += 1
 
-        # 2. cross signal  (5 vs 200)
-        cross_up = (r.sma5 > r.sma200) and (prev_fast.iloc[i] <= prev_slow.iloc[i])
-        cross_dn = (r.sma5 < r.sma200) and (prev_fast.iloc[i] >= prev_slow.iloc[i])
+        # 2. cross signal  (19 vs 29)
+        cross_up = (r.sma19 > r.sma29) and (prev_fast.iloc[i] <= prev_slow.iloc[i])
+        cross_dn = (r.sma19 < r.sma29) and (prev_fast.iloc[i] >= prev_slow.iloc[i])
         sig = 1 if cross_up else (-1 if cross_dn else 0)
 
         # 3. enter / flip – cash-sized
@@ -103,19 +103,19 @@ def buy_and_hold(daily, fee=0.0025, cash=100):
             'trades': 2}
 
 # ------------------------------------------------------------------
-# 5. helper: every 5/200 cross
+# 5. helper: every 19/29 cross
 # ------------------------------------------------------------------
 def crosses(daily):
-    prev_fast = daily['sma5'].shift(1)
-    prev_slow = daily['sma200'].shift(1)
+    prev_fast = daily['sma19'].shift(1)
+    prev_slow = daily['sma29'].shift(1)
     for date, r in daily.iterrows():
-        cross_up = (r.sma5 > r.sma200) and (prev_fast.loc[date] <= prev_slow.loc[date])
-        cross_dn = (r.sma5 < r.sma200) and (prev_fast.loc[date] >= prev_slow.loc[date])
+        cross_up = (r.sma19 > r.sma29) and (prev_fast.loc[date] <= prev_slow.loc[date])
+        cross_dn = (r.sma19 < r.sma29) and (prev_fast.loc[date] >= prev_slow.loc[date])
         if cross_up or cross_dn:
             yield {'date': date,
                    'type': 'CROSS_UP' if cross_up else 'CROSS_DN',
-                   'sma5':  r.sma5,
-                   'sma200': r.sma200,
+                   'sma19': r.sma19,
+                   'sma29': r.sma29,
                    'close': r.close}
 
 # ------------------------------------------------------------------
@@ -127,14 +127,14 @@ if __name__ == '__main__':
     # ---- summary -----------------------------------------------
     ma_result = run(daily)
     bh_result = buy_and_hold(daily)
-    print('5-/200-MA cross:', ma_result)
+    print('19-/29-MA cross:', ma_result)
     print('Buy-and-hold:   ', bh_result)
 
     # ---- every cross -------------------------------------------
-    print('\n--- every 5/200 cross ---')
+    print('\n--- every 19/29 cross ---')
     for c in crosses(daily):
         print(f"{c['date'].date()}  {c['type']:<9}  "
-              f"sma5={c['sma5']:.2f}  sma200={c['sma200']:.2f}  close={c['close']:.2f}")
+              f"sma19={c['sma19']:.2f}  sma29={c['sma29']:.2f}  close={c['close']:.2f}")
 
     # ---- every trade -------------------------------------------
     print('\n--- every cross-trade ---')
