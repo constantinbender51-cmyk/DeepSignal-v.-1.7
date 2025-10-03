@@ -27,22 +27,17 @@ def load_and_convert_to_daily(path='xbtusd_1h_8y.csv'):
         print(f"Data load error: {e}"); return None
 
 # ------------------------------------------------------------------
-# 2. PRINT DAILY CANDLES WITH 0.01 sec DELAY
+# 2. (silent) DAILY CANDLES  –  no prints, no sleep
 # ------------------------------------------------------------------
 def print_daily_candles(daily_df):
-    if daily_df is None or daily_df.empty:
-        print("No daily candles to display.")
-        return
-
-    for ts, row in daily_df.iterrows():
-        print(f"{ts.date()} | O:{row['open']:.2f} H:{row['high']:.2f} L:{row['low']:.2f} C:{row['close']:.2f} V:{row['volume']:.0f}")
-        time.sleep(0.01)
+    """Kept for compatibility; does nothing."""
+    pass
 
 # ------------------------------------------------------------------
-# 3. SINGLE SMA CROSS STRATEGY (parameterised look-back)
+# 3. SINGLE SMA CROSS STRATEGY – no per-bar output
 # ------------------------------------------------------------------
 def run_one_sma(daily_df, lookback=200, leverage=5, initial_margin=100,
-                fee=0.0025, stop_pct=0.10):          # stop_pct now 10 %
+                fee=0.0025, stop_pct=0.10):
     if daily_df is None or daily_df.empty:
         return None
 
@@ -66,21 +61,20 @@ def run_one_sma(daily_df, lookback=200, leverage=5, initial_margin=100,
     for ts, row in df.iterrows():
         price = row['close']
         ma = row['sma']
-
         prev_side = side
 
-        # signal generation (on close)
+        # signal generation
         if price > ma and side != 1:
             side = 1
         elif price < ma and side != -1:
             side = -1
 
-        # ---------- intra-day stop check BEFORE the close ----------
+        # ---------- intra-day stop check ----------
         if position != 0:
             stop_dist = entry_price * stop_pct
             if position > 0:                       # long
                 stop_price = entry_price - stop_dist
-                if row['low'] <= stop_price:       # 10 % stop touched
+                if row['low'] <= stop_price:
                     pnl = position * (stop_price - entry_price)
                     balance += pnl - abs(pnl) * fee
                     position = 0.0
@@ -89,18 +83,18 @@ def run_one_sma(daily_df, lookback=200, leverage=5, initial_margin=100,
                     trades += 1
             else:                                  # short
                 stop_price = entry_price + stop_dist
-                if row['high'] >= stop_price:      # 10 % stop touched
+                if row['high'] >= stop_price:
                     pnl = position * (stop_price - entry_price)
                     balance += pnl - abs(pnl) * fee
                     position = 0.0
                     side = 0
                     prev_side = 0
                     trades += 1
-        # -----------------------------------------------------------
+        # ------------------------------------------
 
-        # if still flat after any stop, execute cross at current close
+        # cross execution
         if side != prev_side and side != 0:
-            if position != 0:                      # close old leg first
+            if position != 0:
                 pnl = position * (price - entry_price)
                 balance += pnl - abs(pnl) * fee
                 trades += 1
@@ -108,21 +102,15 @@ def run_one_sma(daily_df, lookback=200, leverage=5, initial_margin=100,
             position = pos_size(price) * side
             balance -= abs(position * price) * fee
 
-        # mark-to-market at close
+        # mark-to-market
         mtm = position * (price - entry_price) if position else 0.0
         eq = balance + mtm
         max_bal = max(max_bal, eq)
         dd = (max_bal - eq) / max_bal
         max_dd = max(max_dd, dd)
+        # (no print, no sleep)
 
-        print(f"{ts.date()} | "
-              f"O:{row['open']:.2f} H:{row['high']:.2f} L:{row['low']:.2f} C:{row['close']:.2f} "
-              f"V:{row['volume']:.0f} | SMA:{ma:.2f} | "
-              f"{'LONG' if side==1 else 'SHORT' if side==-1 else 'FLAT'} | "
-              f"Eq:{eq:.2f} USD")
-        time.sleep(0.01)
-
-    # final exit if still in position
+    # final exit
     if position != 0:
         pnl = position * (df['close'].iloc[-1] - entry_price)
         balance += pnl - abs(pnl) * fee
@@ -138,24 +126,21 @@ def run_one_sma(daily_df, lookback=200, leverage=5, initial_margin=100,
     }
 
 # ------------------------------------------------------------------
-# 4. RUN MULTIPLE SMAs (200,199,198,197,196 for now)
+# 4. MULTI-SMA BACK-TEST – only final table printed
 # ------------------------------------------------------------------
 def run_sma_cross(daily_df):
-    """Run each SMA independently and print a table."""
     if daily_df is None or daily_df.empty:
         print("No data – nothing to back-test.")
         return
 
-    lookbacks = [200, 199, 198, 197, 196]          # easy to extend to range(1,201)
+    lookbacks = [200, 199, 198, 197, 196]
     results = []
 
     for lb in lookbacks:
-        print(f"\n========== SMA {lb} ==========")
         res = run_one_sma(daily_df, lookback=lb)
         if res:
             results.append(res)
 
-    # summary table
     print("\n===== INDEPENDENT RUNS SUMMARY =====")
     for r in results:
         print(f"SMA{r['lookback']:3.0f} | Final: {r['final_eq']:8.2f} USD | "
