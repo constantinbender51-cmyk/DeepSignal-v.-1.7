@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 live_sma_cross_daily.py
-200/5 SMA cross-over bot for Kraken-Futures pf_xbtusd – DAILY version.
-Places one market order per cross, sized to 5× available margin.
-Runs every day at 00:01 UTC (1 minute after the daily candle closes).
+5-SMA / 200-SMA cross-over bot for Kraken-Futures pf_xbtusd – DAILY version.
+Single-order logic: every day at 00:01 UTC send one market order that
+moves the BTC exposure to 5 × portfolioValue (in BTC terms).
 """
 
 import os
@@ -33,7 +33,7 @@ logging.basicConfig(
 log = logging.getLogger("sma-cross-daily")
 
 # ------------------------------------------------------------------
-# helpers (unchanged)
+# helpers
 # ------------------------------------------------------------------
 def usd_to_btc(usd: float, btc_price: float) -> float:
     return usd / btc_price
@@ -69,9 +69,12 @@ def get_position(api: KrakenFuturesApi) -> float:
             return float(p.get("size", 0)) * side_mult
     return 0.0
 
-def get_usd_available_margin(api: KrakenFuturesApi) -> float:
-    return float(api.get_accounts()["accounts"]["flex"]["availableMargin"])
+def get_portfolio_value_usd(api: KrakenFuturesApi) -> float:
+    return float(api.get_accounts()["accounts"]["flex"]["portfolioValue"])
 
+# ------------------------------------------------------------------
+# single-order helper
+# ------------------------------------------------------------------
 def place_market_order(api: KrakenFuturesApi, order_size: float) -> Dict[str, Any]:
     side = "buy" if order_size > 0 else "sell"
     params = {
@@ -83,63 +86,53 @@ def place_market_order(api: KrakenFuturesApi, order_size: float) -> Dict[str, An
     return api.send_order(params)
 
 # ------------------------------------------------------------------
-# capability test (unchanged logic, just uses daily candles)
+# capability test
 # ------------------------------------------------------------------
 def capability_test(api: KrakenFuturesApi):
     log.info("=== capability test start ===")
     try:
-        df = get_ohlc_daily(200)
+        df = get_ohlc_daily(220)
         sma5, sma200 = compute_smas(df)
         log.info("OHLC ok | 5-SMA=%.2f 200-SMA=%.2f", sma5, sma200)
 
-        usd = get_usd_available_margin(api)
-        log.info("Margin ok | available USD %.2f", usd)
+        pv_usd = get_portfolio_value_usd(api)
+        log.info("Portfolio value ok | %.2f USD", pv_usd)
 
         btc_price = fetch_btc_price()
         log.info("Mark-price fetch ok | %s = %.2f", SYMBOL, btc_price)
 
-        test_size = round_to_tick(usd_to_btc(usd, btc_price) * LEVERAGE)
-        log.info("Sending test market order size=%s BTC (≈ 5× margin)", test_size)
-        place_market_order(api, test_size)
+        current_btc = get_position(api)
+        pv_btc = usd_to_btc(pv_usd, btc_price)
+        target_btc = 5 * pv_btc
+        delta_btc = target_btc - current_btc
 
-        time.sleep(2)
-        pos = get_position(api)
-        if abs(pos) < MIN_ORDER_BTC:
-            raise RuntimeError("Test order did not show in openPositions")
-        log.info("Test order ok | detected position %.6f BTC", pos)
-
-        flatten_size = -pos
-        place_market_order(api, flatten_size)
-        log.info("Flattened test position – account clean")
-
-        # imagined bullish cross
-        current_qty = get_position(api)
-        flat_size = -current_qty
-        if abs(flat_size) >= MIN_ORDER_BTC:
-            place_market_order(api, flat_size); time.sleep(1)
-
-        usd_margin = get_usd_available_margin(api)
-        target_btc = round_to_tick(usd_to_btc(usd_margin, btc_price) * LEVERAGE)
-        target_qty = target_btc
-        if abs(target_qty) >= MIN_ORDER_BTC:
-            place_market_order(api, target_qty)
+        if abs(delta_btc) >= MIN_ORDER_BTC:
+            log.info("Test single order | current %.4f BTC → target %.4f BTC (delta %.4f)",
+                     current_btc, target_btc, delta_btc)
+            place_market_order(api, delta_btc)
             time.sleep(2)
-            pos = get_position(api)
-            if pos < MIN_ORDER_BTC: raise RuntimeError("Imagined bullish cross failed")
-            log.info("Imagined bullish cross ok | position %.6f BTC", pos)
-            place_market_order(api, -pos)  # flatten
+            new_pos = get_position(api)
+            log.info("Test order ok | new position %.6f BTC", new_pos)
+            # flatten
+            flatten = -new_pos
+            if abs(flatten) >= MIN_ORDER_BTC:
+                place_market_order(api, flatten)
+                time.sleep(1)
+        else:
+            log.info("Test delta %.6f BTC too small, skipping order", delta_btc)
 
         # imagined bearish cross
-        usd_margin = get_usd_available_margin(api)
-        target_btc = round_to_tick(usd_to_btc(usd_margin, btc_price) * LEVERAGE)
-        target_qty = -target_btc
-        if abs(target_qty) >= MIN_ORDER_BTC:
-            place_market_order(api, target_qty)
+        target_btc = -5 * pv_btc
+        delta_btc = target_btc - get_position(api)
+        if abs(delta_btc) >= MIN_ORDER_BTC:
+            log.info("Imagined bearish cross | delta %.4f BTC", delta_btc)
+            place_market_order(api, delta_btc)
             time.sleep(2)
-            pos = get_position(api)
-            if pos > -MIN_ORDER_BTC: raise RuntimeError("Imagined bearish cross failed")
-            log.info("Imagined bearish cross ok | position %.6f BTC", pos)
-            place_market_order(api, -pos)  # flatten
+            new_pos = get_position(api)
+            log.info("Imagined bearish cross ok | position %.6f BTC", new_pos)
+            flatten = -new_pos
+            if abs(flatten) >= MIN_ORDER_BTC:
+                place_market_order(api, flatten)
 
     except Exception as e:
         log.exception("Capability test FAILED: %s", e)
@@ -185,24 +178,20 @@ def run():
                 prev_5, prev_200 = cur_5, cur_200
                 continue
 
-            # flatten
-            current_qty = get_position(api)
-            flat_size = -current_qty
-            if abs(flat_size) >= MIN_ORDER_BTC:
-                log.info("Flattening current position (%.6f BTC)", current_qty)
-                place_market_order(api, flat_size)
-                time.sleep(1)
+            # single-order logic
+            pv_usd = get_portfolio_value_usd(api)
+            pv_btc = usd_to_btc(pv_usd, btc_price)
+            current_btc = get_position(api)
+            target_btc = LEVERAGE * pv_btc if bullish else -LEVERAGE * pv_btc
+            delta_btc = target_btc - current_btc
 
-            # new leg
-            usd_margin = get_usd_available_margin(api)
-            target_btc = round_to_tick(usd_to_btc(usd_margin, btc_price) * LEVERAGE)
-            target_qty = target_btc if bullish else -target_btc
-            if abs(target_qty) >= MIN_ORDER_BTC:
-                log.info("%s cross | new target=%.4f BTC", "Bullish" if bullish else "Bearish", target_qty)
-                resp = place_market_order(api, target_qty)
-                log.info("Order sent | recv=%s", resp)
+            if abs(delta_btc) < MIN_ORDER_BTC:
+                log.info("Cross detected but delta %.6f BTC too small, skipping", delta_btc)
             else:
-                log.info("New target size %.6f BTC too small, skipping", target_qty)
+                log.info("%s cross | current %.4f BTC → target %.4f BTC (delta %.4f)",
+                         "Bullish" if bullish else "Bearish", current_btc, target_btc, delta_btc)
+                resp = place_market_order(api, delta_btc)
+                log.info("Order sent | recv=%s", resp)
 
             prev_5, prev_200 = cur_5, cur_200
 
