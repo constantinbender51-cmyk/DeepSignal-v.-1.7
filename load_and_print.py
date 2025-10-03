@@ -1,5 +1,6 @@
 import pandas as pd
 from datetime import datetime
+import itertools, csv, os, time
 
 # ------------------------------------------------------------------
 # 0. USER CONTROLS – change these four lines only
@@ -7,7 +8,7 @@ from datetime import datetime
 FAST_MA = 200         # short / fast window
 SLOW_MA = 50          # long  / slow window
 LEVERAGE = 1.0        # desired leverage (e.g. 3×)
-STOP_FRAC = 1      # stop-loss fraction (e.g. 2 %  → 0.02)
+STOP_FRAC = 1         # stop-loss fraction (e.g. 2 %  → 0.02)
 
 # ------------------------------------------------------------------
 # 1. load hourly csv → daily candles + fast-/slow-MA
@@ -135,28 +136,82 @@ def crosses(daily):
                    'close': r.close}
 
 # ------------------------------------------------------------------
-# 6. run everything
+# 6. exhaustive scan – FAST 200→50, SLOW 45→5, stop 0.01→0.20, lev 1→5
 # ------------------------------------------------------------------
 if __name__ == '__main__':
+    try:
+        from tqdm import tqdm
+    except ImportError:
+        tqdm = lambda x, **__: x          # fallback if tqdm not installed
+
     daily = load_daily()
 
-    # ---- summary -----------------------------------------------
-    ma_result = run(daily)
-    bh_result = buy_and_hold(daily)
-    label = f'{FAST_MA}-/{SLOW_MA}-MA (×{LEVERAGE}, {STOP_FRAC*100:.0f}% stop):'
-    print(f'{label:<35}', ma_result)
-    print('Buy-and-hold:                      ', bh_result)
+    # --- parameter grids -------------------------------------------------------
+    fast_grid = range(200, 45, -5)          # 200, 195, 190 … 50
+    slow_grid = range( 45,  0, -5)          #  45, 40, 35 …  5
+    stop_grid = [round(x,3) for x in
+                 [x * 0.005 for x in range(2, 41)]]  # 0.01 … 0.20 step 0.005
+    lev_grid  = range(1, 6)                 # 1, 2, 3, 4, 5
 
-    # ---- every cross -------------------------------------------
-    print(f'\n--- every {FAST_MA}/{SLOW_MA} cross ---')
-    for c in crosses(daily):
-        print(f"{c['date'].date()}  {c['type']:<9}  "
-              f"sma{FAST_MA}={c[f'sma{FAST_MA}']:.2f}  "
-              f"sma{SLOW_MA}={c[f'sma{SLOW_MA}']:.2f}  "
-              f"close={c['close']:.2f}")
+    total = len(fast_grid) * len(slow_grid) * len(stop_grid) * len(lev_grid)
 
-    # ---- every trade -------------------------------------------
-    print(f'\n--- every cross-trade ---')
-    for t in run_detailed(daily):
-        print(f"{t['date'].date()}  {t['side']:<10} "
-              f"price={t['price']:.2f}  pnl={t['pnl']:.2f}  balance={t['balance']:.2f}")
+    # --- output files ----------------------------------------------------------
+    SUM_CSV = 'scan_summary.csv'
+    TRD_CSV = 'scan_trades.csv'
+
+    with open(SUM_CSV, 'w', newline='') as fs, \
+         open(TRD_CSV, 'w', newline='') as ft:
+
+        sum_writer = None
+        trd_writer = None
+
+        pbar = tqdm(itertools.product(fast_grid, slow_grid, stop_grid, lev_grid),
+                    total=total, desc='scanning')
+
+        for fast, slow, stop, lev in pbar:
+            if fast <= slow:                # meaningless MA pair
+                continue
+
+            # override the global constants inside the engine
+            FAST_MA, SLOW_MA, STOP_FRAC, LEVERAGE = fast, slow, stop, lev
+
+            # recompute MAs on the daily frame
+            daily_copy = daily.copy()
+            daily_copy[f'sma{fast}'] = daily_copy['close'].rolling(fast).mean()
+            daily_copy[f'sma{slow}'] = daily_copy['close'].rolling(slow).mean()
+            daily_copy = daily_copy.dropna()
+
+            summary, trade_log = _engine(daily_copy, lev=lev, stop=stop)
+
+            # --- write summary row -------------------------------------------
+            summary.update({'fast': fast, 'slow': slow,
+                            'stop': stop, 'leverage': lev})
+            if sum_writer is None:
+                sum_writer = csv.DictWriter(fs, fieldnames=list(summary.keys()))
+                sum_writer.writeheader()
+            sum_writer.writerow(summary)
+
+            # --- write individual trades -------------------------------------
+            for tr in trade_log:
+                tr.update({'fast': fast, 'slow': slow,
+                           'stop': stop, 'leverage': lev})
+                if trd_writer is None:
+                    trd_writer = csv.DictWriter(ft, fieldnames=list(tr.keys()))
+                    trd_writer.writeheader()
+                trd_writer.writerow(tr)
+
+    print('Scan finished →', os.path.abspath(SUM_CSV),
+          '&', os.path.abspath(TRD_CSV))
+
+    # ------------------------------------------------------------------
+    # 7. slow-print the files (0.1 s between lines)
+    # ------------------------------------------------------------------
+    def _slow_print(path):
+        with open(path) as f:
+            for ln in f:
+                print(ln.rstrip())
+                time.sleep(0.1)
+
+    _slow_print(SUM_CSV)
+    print('\n' + '='*80 + '\n')
+    _slow_print(TRD_CSV)
