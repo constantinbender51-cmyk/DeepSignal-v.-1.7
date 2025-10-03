@@ -22,103 +22,75 @@ def load_daily(path='xbtusd_1h_8y.csv'):
     return daily.dropna()
 
 # ------------------------------------------------------------------
-# 2. 50/200 cross strategy with 1 % stop – cash-sized positions
+# 2. single engine – returns (summary_dict, trade_list)
 # ------------------------------------------------------------------
-def run(daily, lev=1, fee=0.0025, stop=0.01, cash=100):
+def _engine(daily, lev=1, fee=0.0025, stop=0.01, cash=100):
+    """Shared back-test engine."""
     pos = 0
     entry = None
     balance = cash
     trades = 0
-
-    prev_fast = daily['sma50'].shift(1)
-    prev_slow = daily['sma200'].shift(1)
-
-    for i, (_, r) in enumerate(daily.iterrows()):
-        # ---- 1. stop exit ----------------------------------------
-        if pos:
-            st = entry*(1 - stop) if pos > 0 else entry*(1 + stop)
-            if (pos > 0 and r.low <= st) or (pos < 0 and r.high >= st):
-                pnl = pos*(st - entry)
-                balance += pnl - abs(pnl)*fee
-                pos = 0
-                trades += 1
-
-        # ---- 2. cross signal (only first flip bar) ---------------
-        cross_up = (r.sma50 > r.sma200) and (prev_fast.iloc[i] <= prev_slow.iloc[i])
-        cross_dn = (r.sma50 < r.sma200) and (prev_fast.iloc[i] >= prev_slow.iloc[i])
-        sig = 1 if cross_up else (-1 if cross_dn else 0)
-
-        # ---- 3. enter / flip – size by available cash -------------
-        if sig and sig != pos and balance > 0:
-            if pos:                                 # close old
-                pnl = pos*(r.close - entry)
-                balance += pnl - abs(pnl)*fee
-                trades += 1
-            # --- cash-sized position ------------------------------
-            max_size = balance / (r.close * (1 + fee))  # coins we can afford
-            pos = sig * max_size                        # long or short that amount
-            entry = r.close
-            balance -= abs(pos * entry) * fee           # opening fee
-            trades += 1
-
-    # ---- 4. final exit if still in market ------------------------
-    if pos:
-        pnl = pos*(daily['close'].iloc[-1] - entry)
-        balance += pnl - abs(pnl)*fee
-        trades += 1
-
-    return {'final': balance,
-            'return_%': (balance/cash - 1)*100,
-            'trades': trades}
-
-# ------------------------------------------------------------------
-# 3. generator that yields every trade (entry / exit / stop)
-# ------------------------------------------------------------------
-def run_detailed(daily, lev=1, fee=0.0025, stop=0.01, cash=100):
-    pos = 0
-    entry = None
-    balance = cash
+    trade_log = []                       # collect every trade row
 
     prev_fast = daily['sma50'].shift(1)
     prev_slow = daily['sma200'].shift(1)
 
     for i, (date, r) in enumerate(daily.iterrows()):
-        # ---- 1. stop exit ----------------------------------------
+        # 1. stop exit
         if pos:
             st = entry*(1 - stop) if pos > 0 else entry*(1 + stop)
             if (pos > 0 and r.low <= st) or (pos < 0 and r.high >= st):
                 pnl = pos*(st - entry)
                 balance += pnl - abs(pnl)*fee
-                yield {'date': date, 'side': 'STOP',
-                       'price': st, 'pnl': pnl, 'balance': balance}
+                trade_log.append({'date': date, 'side': 'STOP',
+                                  'price': st, 'pnl': pnl, 'balance': balance})
                 pos = 0
+                trades += 1
 
-        # ---- 2. cross signal -------------------------------------
+        # 2. cross signal
         cross_up = (r.sma50 > r.sma200) and (prev_fast.iloc[i] <= prev_slow.iloc[i])
         cross_dn = (r.sma50 < r.sma200) and (prev_fast.iloc[i] >= prev_slow.iloc[i])
         sig = 1 if cross_up else (-1 if cross_dn else 0)
 
-        # ---- 3. enter / flip – size by available cash -------------
+        # 3. enter / flip – cash-sized
         if sig and sig != pos and balance > 0:
-            if pos:                                 # close old
+            if pos:                         # close old
                 pnl = pos*(r.close - entry)
                 balance += pnl - abs(pnl)*fee
-                yield {'date': date, 'side': 'EXIT',
-                       'price': r.close, 'pnl': pnl, 'balance': balance}
-            # --- cash-sized position ------------------------------
+                trade_log.append({'date': date, 'side': 'EXIT',
+                                  'price': r.close, 'pnl': pnl, 'balance': balance})
+                trades += 1
             max_size = balance / (r.close * (1 + fee))
             pos = sig * max_size
             entry = r.close
             balance -= abs(pos * entry) * fee
-            yield {'date': date, 'side': 'ENTRY',
-                   'price': entry, 'pnl': 0, 'balance': balance}
+            trade_log.append({'date': date, 'side': 'ENTRY',
+                              'price': entry, 'pnl': 0, 'balance': balance})
+            trades += 1
 
-    # ---- 4. final exit if still in market ------------------------
+    # 4. final exit
     if pos:
         pnl = pos*(daily['close'].iloc[-1] - entry)
         balance += pnl - abs(pnl)*fee
-        yield {'date': daily.index[-1], 'side': 'FINAL_EXIT',
-               'price': daily['close'].iloc[-1], 'pnl': pnl, 'balance': balance}
+        trade_log.append({'date': daily.index[-1], 'side': 'FINAL_EXIT',
+                          'price': daily['close'].iloc[-1], 'pnl': pnl, 'balance': balance})
+        trades += 1
+
+    summary = {'final': balance,
+               'return_%': (balance/cash - 1)*100,
+               'trades': trades}
+    return summary, trade_log
+
+# ------------------------------------------------------------------
+# 3. thin wrappers
+# ------------------------------------------------------------------
+def run(daily, **kw):
+    summary, _ = _engine(daily, **kw)
+    return summary
+
+def run_detailed(daily, **kw):
+    _, trade_log = _engine(daily, **kw)
+    yield from trade_log
 
 # ------------------------------------------------------------------
 # 4. buy-and-hold benchmark
