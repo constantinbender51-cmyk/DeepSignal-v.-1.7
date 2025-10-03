@@ -37,11 +37,15 @@ def print_daily_candles(daily_df):
 # ------------------------------------------------------------------
 # 3-bis. SINGLE SMA CROSS STRATEGY – 50/200 CROSS FILTER  (SILENT)
 # ------------------------------------------------------------------
+# ------------------------------------------------------------------
+# 3-bis. SINGLE SMA CROSS STRATEGY – 50/200 CROSS FILTER  (SILENT)
+# ------------------------------------------------------------------
 def run_one_sma(daily_df, lookback=200, leverage=5, initial_margin=100,
                 fee=0.0025, stop_pct=0.02):
     """
     Runs the 50/200 SMA-cross strategy once.
-    Returns a dict with all common performance metrics (no prints).
+    Returns a dict with all common performance metrics plus
+    max_loss_trade, max_gain_trade, n_losses, n_gains (no prints).
     """
     if daily_df is None or daily_df.empty:
         return None
@@ -61,6 +65,12 @@ def run_one_sma(daily_df, lookback=200, leverage=5, initial_margin=100,
     side = 0
     entry_price = 0.0
     trades = 0
+
+    # ---- new tracking variables ----
+    max_gain_trade = 0.0
+    max_loss_trade = 0.0
+    n_gains = 0
+    n_losses = 0
 
     def pos_size(price):
         return balance * leverage / price
@@ -94,6 +104,14 @@ def run_one_sma(daily_df, lookback=200, leverage=5, initial_margin=100,
                 if row['low'] <= stop_price:
                     pnl = position * (stop_price - entry_price)
                     balance += pnl - abs(pnl) * fee
+                    # ---- track trade stats ----
+                    if pnl > 0:
+                        n_gains += 1
+                        max_gain_trade = max(max_gain_trade, pnl)
+                    else:
+                        n_losses += 1
+                        max_loss_trade = min(max_loss_trade, pnl)
+                    # ---------------------------
                     position = 0.0
                     side = 0
                     prev_side = 0
@@ -103,6 +121,14 @@ def run_one_sma(daily_df, lookback=200, leverage=5, initial_margin=100,
                 if row['high'] >= stop_price:
                     pnl = position * (stop_price - entry_price)
                     balance += pnl - abs(pnl) * fee
+                    # ---- track trade stats ----
+                    if pnl > 0:
+                        n_gains += 1
+                        max_gain_trade = max(max_gain_trade, pnl)
+                    else:
+                        n_losses += 1
+                        max_loss_trade = min(max_loss_trade, pnl)
+                    # ---------------------------
                     position = 0.0
                     side = 0
                     prev_side = 0
@@ -113,6 +139,14 @@ def run_one_sma(daily_df, lookback=200, leverage=5, initial_margin=100,
             if position != 0:                      # close old leg first
                 pnl = position * (price - entry_price)
                 balance += pnl - abs(pnl) * fee
+                # ---- track trade stats ----
+                if pnl > 0:
+                    n_gains += 1
+                    max_gain_trade = max(max_gain_trade, pnl)
+                else:
+                    n_losses += 1
+                    max_loss_trade = min(max_loss_trade, pnl)
+                # ---------------------------
                 trades += 1
             entry_price = price
             position = pos_size(price) * side
@@ -129,6 +163,14 @@ def run_one_sma(daily_df, lookback=200, leverage=5, initial_margin=100,
     if position != 0:
         pnl = position * (df['close'].iloc[-1] - entry_price)
         balance += pnl - abs(pnl) * fee
+        # ---- track trade stats ----
+        if pnl > 0:
+            n_gains += 1
+            max_gain_trade = max(max_gain_trade, pnl)
+        else:
+            n_losses += 1
+            max_loss_trade = min(max_loss_trade, pnl)
+        # ---------------------------
         trades += 1
 
     final_eq = balance
@@ -137,7 +179,11 @@ def run_one_sma(daily_df, lookback=200, leverage=5, initial_margin=100,
         'final_eq': final_eq,
         'return_pct': (final_eq / initial_margin - 1) * 100,
         'max_dd_pct': max_dd * 100,
-        'trades': trades
+        'trades': trades,
+        'max_loss_trade': max_loss_trade,
+        'max_gain_trade': max_gain_trade,
+        'n_losses': n_losses,
+        'n_gains': n_gains
     }
 
 
@@ -159,9 +205,17 @@ def run_sma_cross(daily_df):
 
     print("\n===== INDEPENDENT RUNS SUMMARY =====")
     for r in results:
-        print(f"SMA{r['lookback']:3.0f} | Final: {r['final_eq']:8.2f} USD | "
-              f"Return: {r['return_pct']:+7.2f} % | Max DD: {r['max_dd_pct']:6.2f} %")
-    print("="*42)
+        print(f"SMA{r['lookback']:3.0f} | "
+              f"Final: {r['final_eq']:8.2f} USD | "
+              f"Return: {r['return_pct']:+7.2f} % | "
+              f"Max DD: {r['max_dd_pct']:6.2f} % | "
+              f"Trades: {r['trades']:3.0f} | "
+              f"Best: {r['max_gain_trade']:8.2f} | "
+              f"Worst: {r['max_loss_trade']:8.2f} | "
+              f"W: {r['n_gains']:3.0f} | "
+              f"L: {r['n_losses']:3.0f}")
+    print("="*95)
+
 # ------------------------------------------------------------------
 # 4. ONE-CLICK RUN
 # ------------------------------------------------------------------
