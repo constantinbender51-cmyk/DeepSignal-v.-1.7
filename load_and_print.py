@@ -1,5 +1,6 @@
 import pandas as pd
 import time
+from itertools import product
 
 # ------------------------------------------------------------------
 # 1. LOAD CSV & CONVERT TO DAILY CANDLES
@@ -19,7 +20,6 @@ def load_and_convert_to_daily(path='xbtusd_1h_8y.csv'):
             'close': 'last',
             'volume': 'sum'
         }).dropna()
-
         return daily
     except FileNotFoundError:
         print("Error: 'xbtusd_1h_8y.csv' not found."); return None
@@ -27,103 +27,85 @@ def load_and_convert_to_daily(path='xbtusd_1h_8y.csv'):
         print(f"Data load error: {e}"); return None
 
 # ------------------------------------------------------------------
-# 2. PRINT DAILY CANDLES WITH 0.01 sec DELAY
+# 2. GENERIC SMA-CROSS BACK-TESTER
+#    – stops if equity ≤ 0
+#    – returns one-line metrics dict
 # ------------------------------------------------------------------
-def print_daily_candles(daily_df):
-    if daily_df is None or daily_df.empty:
-        print("No daily candles to display.")
-        return
-
-    for ts, row in daily_df.iterrows():
-        print(f"{ts.date()} | O:{row['open']:.2f} H:{row['high']:.2f} L:{row['low']:.2f} C:{row['close']:.2f} V:{row['volume']:.0f}")
-        time.sleep(0.01)
-
-# ------------------------------------------------------------------
-# 3. 200-SMA CROSS STRATEGY (5× lev, 100 USD margin)
-# ------------------------------------------------------------------
-def run_sma_cross(daily_df, leverage=5, initial_margin=100, fee=0.0005):
-    """Simulates a 200-SMA cross strategy on the daily candles."""
-    if daily_df is None or daily_df.empty:
-        print("No data – nothing to back-test.")
-        return
-
-    # --- prepare series -------------------------------------------------
+def sma_backtest(daily_df, sma_len, leverage=5, init_margin=100, fee=0.0005):
     close = daily_df['close']
-    sma200 = close.rolling(200).mean()
-    daily_df = daily_df.copy()
-    daily_df['sma200'] = sma200
-    daily_df.dropna(inplace=True)          # need 200 pts before first trade
+    sma   = close.rolling(sma_len).mean()
+    df    = daily_df.copy()
+    df['sma'] = sma
+    df.dropna(inplace=True)
 
-    # --- state variables ------------------------------------------------
-    position = 0.0          # number of contracts / coins held
-    balance = initial_margin
-    max_bal = balance
+    balance = float(init_margin)
+    position = 0.0
+    side = 0
+    entry_price = 0.0
+    max_eq = balance
     max_dd = 0.0
-    side = 0                # 1 long, -1 short, 0 flat
+    trades = 0
 
-    # --- helper ---------------------------------------------------------
-    def pos_size(price):
-        """How many coins we can buy/sell with full leverage."""
-        return balance * leverage / price
-
-    # --- main loop ------------------------------------------------------
-    for ts, row in daily_df.iterrows():
-        price = row['close']
-        sma = row['sma200']
-
-        # signal
+    for price in df['close']:
+        # --- signal -------------------------------------------------
         prev_side = side
-        if price > sma and side != 1:      # cross up → go long
+        if price > sma.iloc[0] and side != 1:
             side = 1
-        elif price < sma and side != -1:   # cross down → go short
+        elif price < sma.iloc[0] and side != -1:
             side = -1
-        else:                              # no signal
-            side = side
+        # else hold current side
 
-        # execute trade only on side change
+        # --- execution ---------------------------------------------
         if side != prev_side:
-            # close old position
+            # close old
             if position != 0:
                 pnl = position * (price - entry_price)
-                balance += pnl - abs(pnl) * fee       # pay fee on exit
+                balance += pnl - abs(pnl) * fee
                 position = 0.0
-            # open new position
+                if balance <= 0:
+                    break
+            # open new
             if side != 0:
                 entry_price = price
-                position = pos_size(price) * side
-                balance -= abs(position * price) * fee  # pay fee on entry
+                position = (balance * leverage / price) * side
+                balance -= abs(position * price) * fee
+                trades += 1
+                if balance <= 0:
+                    break
 
-        # mark-to-market PnL while in trade
-        mtm_pnl = 0.0
-        if position != 0:
-            mtm_pnl = position * (price - entry_price)
-
-        # draw-down
-        eq = balance + mtm_pnl
-        max_bal = max(max_bal, eq)
-        dd = (max_bal - eq) / max_bal
+        # --- mark-to-market ----------------------------------------
+        eq = balance + (position * (price - entry_price) if position != 0 else 0)
+        max_eq = max(max_eq, eq)
+        dd = (max_eq - eq) / max_eq
         max_dd = max(max_dd, dd)
+        if eq <= 0:
+            break
 
-        # pretty print
-        print(f"{ts.date()} | "
-              f"O:{row['open']:.2f} H:{row['high']:.2f} L:{row['low']:.2f} C:{row['close']:.2f} "
-              f"V:{row['volume']:.0f} | SMA:{sma:.2f} | "
-              f"{'LONG' if side==1 else 'SHORT' if side==-1 else 'FLAT'} | "
-              f"Eq:{eq:.2f} USD")
+    final_eq = eq if 'eq' in locals() else balance
+    return {
+        'sma'      : sma_len,
+        'trades'   : trades,
+        'final_eq' : final_eq,
+        'return_pct': (final_eq / init_margin - 1) * 100,
+        'max_dd_pct': max_dd * 100
+    }
 
-        time.sleep(0.01)
-
-    # --- summary --------------------------------------------------------
-    print("\n===== STRATEGY SUMMARY =====")
-    print(f"Initial margin : {initial_margin:,.2f} USD")
-    print(f"Final equity   : {balance + (position*(daily_df['close'].iloc[-1] - entry_price) if position else 0):,.2f} USD")
-    print(f"Total return   : {((balance/initial_margin - 1)*100):,.2f} %")
-    print(f"Max draw-down  : {max_dd*100:.2f} %")
-    print("=============================")
+# ------------------------------------------------------------------
+# 3. RUN EVERY SMA 1 → 400
+# ------------------------------------------------------------------
+def scan_all_smas(daily_df):
+    if daily_df is None or daily_df.empty:
+        print("No data – aborting scan."); return
+    print("sma_len | trades | final_eq | return_% | max_dd_%")
+    for n in range(1, 401):
+        res = sma_backtest(daily_df, n)
+        print(f"{res['sma']:5d} | {res['trades']:6d} | "
+              f"{res['final_eq']:8.2f} | {res['return_pct']:7.2f} | "
+              f"{res['max_dd_pct']:7.2f}")
 
 # ------------------------------------------------------------------
 # 4. ONE-CLICK RUN
 # ------------------------------------------------------------------
 if __name__ == "__main__":
     daily = load_and_convert_to_daily()
-    run_sma_cross(daily)
+    scan_all_smas(daily)
