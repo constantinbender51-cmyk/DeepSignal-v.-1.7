@@ -2,7 +2,15 @@ import pandas as pd
 from datetime import datetime
 
 # ------------------------------------------------------------------
-# 1. load hourly csv → daily candles + 19-/29-MA  (19/29 cross)
+# 0. USER CONTROLS – change these four lines only
+# ------------------------------------------------------------------
+FAST_MA = 200         # short / fast window
+SLOW_MA = 50          # long  / slow window
+LEVERAGE = 1.0        # desired leverage (e.g. 3×)
+STOP_FRAC = 1      # stop-loss fraction (e.g. 2 %  → 0.02)
+
+# ------------------------------------------------------------------
+# 1. load hourly csv → daily candles + fast-/slow-MA
 # ------------------------------------------------------------------
 def load_daily(path='xbtusd_1h_8y.csv'):
     df = pd.read_csv(path)
@@ -16,22 +24,26 @@ def load_daily(path='xbtusd_1h_8y.csv'):
                      'low':  'min',
                      'close':'last'})
                .dropna())
-    daily['sma19'] = daily['close'].rolling(19).mean()   # fast
-    daily['sma29'] = daily['close'].rolling(29).mean()   # slow
+
+    daily[f'sma{FAST_MA}'] = daily['close'].rolling(FAST_MA).mean()
+    daily[f'sma{SLOW_MA}'] = daily['close'].rolling(SLOW_MA).mean()
     return daily.dropna()
 
 # ------------------------------------------------------------------
 # 2. single engine – returns (summary_dict, trade_list)
 # ------------------------------------------------------------------
-def _engine(daily, lev=1, fee=0.0025, stop=1, cash=100):
+def _engine(daily, lev=LEVERAGE, fee=0.0025, stop=STOP_FRAC, cash=100):
     pos = 0
     entry = None
     balance = cash
     trades = 0
     trade_log = []
 
-    prev_fast = daily['sma19'].shift(1)   # fast = 19
-    prev_slow = daily['sma29'].shift(1)   # slow = 29
+    fast_col = f'sma{FAST_MA}'
+    slow_col = f'sma{SLOW_MA}'
+
+    prev_fast = daily[fast_col].shift(1)
+    prev_slow = daily[slow_col].shift(1)
 
     for i, (date, r) in enumerate(daily.iterrows()):
         # 1. stop exit
@@ -45,20 +57,21 @@ def _engine(daily, lev=1, fee=0.0025, stop=1, cash=100):
                 pos = 0
                 trades += 1
 
-        # 2. cross signal  (19 vs 29)
-        cross_up = (r.sma19 > r.sma29) and (prev_fast.iloc[i] <= prev_slow.iloc[i])
-        cross_dn = (r.sma19 < r.sma29) and (prev_fast.iloc[i] >= prev_slow.iloc[i])
+        # 2. cross signal
+        cross_up = (r[fast_col] > r[slow_col]) and (prev_fast.iloc[i] <= prev_slow.iloc[i])
+        cross_dn = (r[fast_col] < r[slow_col]) and (prev_fast.iloc[i] >= prev_slow.iloc[i])
         sig = 1 if cross_up else (-1 if cross_dn else 0)
 
-        # 3. enter / flip – cash-sized
-        if sig and sig != pos and balance > 0:
+        # 3. enter / flip – LEVERAGE-sized
+        if sig and balance > 0:
             if pos:                         # close old
                 pnl = pos*(r.close - entry)
                 balance += pnl - abs(pnl)*fee
                 trade_log.append({'date': date, 'side': 'EXIT',
                                   'price': r.close, 'pnl': pnl, 'balance': balance})
                 trades += 1
-            max_size = balance / (r.close * (1 + fee))
+            notional = balance * lev
+            max_size = notional / (r.close * (1 + fee))
             pos = sig * max_size
             entry = r.close
             balance -= abs(pos * entry) * fee
@@ -103,19 +116,22 @@ def buy_and_hold(daily, fee=0.0025, cash=100):
             'trades': 2}
 
 # ------------------------------------------------------------------
-# 5. helper: every 19/29 cross
+# 5. helper: every fast/slow cross
 # ------------------------------------------------------------------
 def crosses(daily):
-    prev_fast = daily['sma19'].shift(1)
-    prev_slow = daily['sma29'].shift(1)
+    fast_col = f'sma{FAST_MA}'
+    slow_col = f'sma{SLOW_MA}'
+    prev_fast = daily[fast_col].shift(1)
+    prev_slow = daily[slow_col].shift(1)
+
     for date, r in daily.iterrows():
-        cross_up = (r.sma19 > r.sma29) and (prev_fast.loc[date] <= prev_slow.loc[date])
-        cross_dn = (r.sma19 < r.sma29) and (prev_fast.loc[date] >= prev_slow.loc[date])
+        cross_up = (r[fast_col] > r[slow_col]) and (prev_fast.loc[date] <= prev_slow.loc[date])
+        cross_dn = (r[fast_col] < r[slow_col]) and (prev_fast.loc[date] >= prev_slow.loc[date])
         if cross_up or cross_dn:
             yield {'date': date,
                    'type': 'CROSS_UP' if cross_up else 'CROSS_DN',
-                   'sma19': r.sma19,
-                   'sma29': r.sma29,
+                   fast_col: r[fast_col],
+                   slow_col: r[slow_col],
                    'close': r.close}
 
 # ------------------------------------------------------------------
@@ -127,17 +143,20 @@ if __name__ == '__main__':
     # ---- summary -----------------------------------------------
     ma_result = run(daily)
     bh_result = buy_and_hold(daily)
-    print('19-/29-MA cross:', ma_result)
-    print('Buy-and-hold:   ', bh_result)
+    label = f'{FAST_MA}-/{SLOW_MA}-MA (×{LEVERAGE}, {STOP_FRAC*100:.0f}% stop):'
+    print(f'{label:<35}', ma_result)
+    print('Buy-and-hold:                      ', bh_result)
 
     # ---- every cross -------------------------------------------
-    print('\n--- every 19/29 cross ---')
+    print(f'\n--- every {FAST_MA}/{SLOW_MA} cross ---')
     for c in crosses(daily):
         print(f"{c['date'].date()}  {c['type']:<9}  "
-              f"sma19={c['sma19']:.2f}  sma29={c['sma29']:.2f}  close={c['close']:.2f}")
+              f"sma{FAST_MA}={c[f'sma{FAST_MA}']:.2f}  "
+              f"sma{SLOW_MA}={c[f'sma{SLOW_MA}']:.2f}  "
+              f"close={c['close']:.2f}")
 
     # ---- every trade -------------------------------------------
-    print('\n--- every cross-trade ---')
+    print(f'\n--- every cross-trade ---')
     for t in run_detailed(daily):
         print(f"{t['date'].date()}  {t['side']:<10} "
               f"price={t['price']:.2f}  pnl={t['pnl']:.2f}  balance={t['balance']:.2f}")
