@@ -49,12 +49,17 @@ def fetch_btc_price() -> float:
             return float(t["markPrice"])
     raise RuntimeError(f"{SYMBOL} mark price not found")
 
-def get_ohlc_daily(n: int = 220) -> pd.DataFrame:
+# ------------------------------------------------------------------
+# 400-/5-day SMA cross – DAILY version
+# ------------------------------------------------------------------
+def get_ohlc_daily(n: int = 420) -> pd.DataFrame:
+    """Pull enough history for 400-day SMA (plus a small buffer)."""
     return get_ohlc(KRAKEN_SPOT_PAIR, INTERVAL).tail(n)
 
 def compute_smas(df: pd.DataFrame) -> tuple[float, float]:
+    """Return (5-day SMA, 400-day SMA)."""
     closes = df["close"]
-    return closes.tail(5).mean(), closes.tail(200).mean()
+    return closes.tail(5).mean(), closes.tail(400).mean()
 
 def get_position(api: KrakenFuturesApi) -> float:
     raw = api.get_open_positions()
