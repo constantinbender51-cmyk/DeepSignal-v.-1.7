@@ -37,8 +37,8 @@ def print_daily_candles(daily_df):
 # ------------------------------------------------------------------
 # 3-bis. SINGLE SMA CROSS STRATEGY – 50/200 CROSS FILTER  (SILENT)
 # ------------------------------------------------------------------
-def run_one_sma(daily_df, lookback=200, leverage=1, initial_margin=100,
-                fee=0.0025, stop_pct=1):
+def run_one_sma(daily_df, lookback=200, leverage=2, initial_margin=100,
+                fee=0.0025, stop_pct=0.01):
     """
     Runs the 50/200 SMA-cross strategy once.
     Returns a dict with all common performance metrics plus
