@@ -69,8 +69,15 @@ def get_position(api: KrakenFuturesApi) -> float:
             return float(p.get("size", 0)) * side_mult
     return 0.0
 
-def get_portfolio_value_usd(api: KrakenFuturesApi) -> float:
-    return float(api.get_accounts()["accounts"]["flex"]["portfolioValue"])
+def get_usd_balance(api: KrakenFuturesApi) -> float:
+    """
+    Return the quantity of USD sitting in the flex wallet.
+    """
+    flex = api.get_accounts()["accounts"]["flex"]
+    for cur in flex["currencies"]:
+        if cur["currency"].upper() == "USD":
+            return float(cur["quantity"])
+    raise RuntimeError("USD balance not found in flex wallet")
 
 # ------------------------------------------------------------------
 # single-order helper
@@ -95,8 +102,8 @@ def capability_test(api: KrakenFuturesApi):
         sma5, sma200 = compute_smas(df)
         log.info("OHLC ok | 5-SMA=%.2f 200-SMA=%.2f", sma5, sma200)
 
-        pv_usd = get_portfolio_value_usd(api)
-        log.info("Portfolio value ok | %.2f USD", pv_usd)
+        pv_usd = get_usd_balance(api)
+        log.info("USD balance ok | %.2f USD", pv_usd)
 
         btc_price = fetch_btc_price()
         log.info("Mark-price fetch ok | %s = %.2f", SYMBOL, btc_price)
@@ -179,7 +186,7 @@ def run():
                 continue
 
             # single-order logic
-            pv_usd = get_portfolio_value_usd(api)
+            pv_usd = get_usd_balance(api)
             pv_btc = usd_to_btc(pv_usd, btc_price)
             current_btc = get_position(api)
             target_btc = LEVERAGE * pv_btc if bullish else -LEVERAGE * pv_btc
