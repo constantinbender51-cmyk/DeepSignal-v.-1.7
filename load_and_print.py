@@ -24,7 +24,7 @@ def load_daily(path='xbtusd_1h_8y.csv'):
 # ------------------------------------------------------------------
 # 2. single engine – returns (summary_dict, trade_list)
 # ------------------------------------------------------------------
-def _engine(daily, lev=1, fee=0.0025, stop=0.02, cash=100):
+def _engine(daily, lev=1, fee=0.0025, stop=1, cash=100):
     """Shared back-test engine."""
     pos = 0
     entry = None
