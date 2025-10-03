@@ -92,6 +92,7 @@ def run_one_sma(daily_df, lookback=200, leverage=1, initial_margin=100,
             side = 0
 
         # --- intra-day stop check ---
+        stopped = False
         if position != 0:
             stop_dist = entry_price * stop_pct
             if position > 0:                       # long
@@ -100,7 +101,7 @@ def run_one_sma(daily_df, lookback=200, leverage=1, initial_margin=100,
                     pnl = position * (stop_price - entry_price)
                     fee_cost = abs(pnl) * fee
                     balance += pnl - fee_cost
-                    total_fees += fee_cost         # <── NEW
+                    total_fees += fee_cost
                     if pnl > 0:
                         n_gains += 1
                         max_gain_trade = max(max_gain_trade, pnl)
@@ -108,16 +109,14 @@ def run_one_sma(daily_df, lookback=200, leverage=1, initial_margin=100,
                         n_losses += 1
                         max_loss_trade = min(max_loss_trade, pnl)
                     position = 0.0
-                    side = 0
-                    prev_side = 0
-                    trades += 1
+                    stopped = True                 # mark stop but do NOT ++trades yet
             else:                                  # short
                 stop_price = entry_price + stop_dist
                 if row['high'] >= stop_price:
                     pnl = position * (stop_price - entry_price)
                     fee_cost = abs(pnl) * fee
                     balance += pnl - fee_cost
-                    total_fees += fee_cost         # <── NEW
+                    total_fees += fee_cost
                     if pnl > 0:
                         n_gains += 1
                         max_gain_trade = max(max_gain_trade, pnl)
@@ -125,30 +124,31 @@ def run_one_sma(daily_df, lookback=200, leverage=1, initial_margin=100,
                         n_losses += 1
                         max_loss_trade = min(max_loss_trade, pnl)
                     position = 0.0
-                    side = 0
-                    prev_side = 0
-                    trades += 1
+                    stopped = True
 
-        # --- cross at close if still flat ---
-        if side != prev_side and side != 0:
+        # --- cross at close if still flat OR side changed ---
+        if side != prev_side:                      # real regime change
             if position != 0:                      # close old leg
                 pnl = position * (price - entry_price)
                 fee_cost = abs(pnl) * fee
                 balance += pnl - fee_cost
-                total_fees += fee_cost             # <── NEW
+                total_fees += fee_cost
                 if pnl > 0:
                     n_gains += 1
                     max_gain_trade = max(max_gain_trade, pnl)
                 else:
                     n_losses += 1
                     max_loss_trade = min(max_loss_trade, pnl)
-                trades += 1
-            entry_price = price
-            notional = pos_size(price) * side
-            fee_cost = abs(notional * price) * fee
-            balance -= fee_cost
-            total_fees += fee_cost                 # <── NEW
-            position = notional
+                trades += 1                        # count only when side flips
+            if side != 0:                          # enter new leg
+                entry_price = price
+                notional = pos_size(price) * side
+                fee_cost = abs(notional * price) * fee
+                balance -= fee_cost
+                total_fees += fee_cost
+                position = notional
+                if stopped:                        # stop counted above, do not count again
+                    trades -= 1
 
         # mark-to-market
         mtm = position * (price - entry_price) if position else 0.0
