@@ -6,19 +6,28 @@ inf_re = re.compile(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\s+ $$inf$$ \s+'
 
 def iter_results(path: Path):
     with path.open() as fh:
+        # --- 1. look for the header ----------------------------------------
         for line in fh:
             if "final,return_%,trades,fast,slow,stop,leverage" in line:
+                print("DEBUG: header found")          # <──
                 break
-        for line in fh:
+        else:                                         # header never seen
+            print("DEBUG: header line missing – no data will be read")
+            return
+
+        # --- 2. process every subsequent line ------------------------------
+        for lineno, line in enumerate(fh, start=1):
             line = inf_re.sub("", line.strip())
             if not line:
                 continue
             parts = line.split(",")
             if len(parts) != 7:
+                print(f"DEBUG: line {lineno} has {len(parts)} fields (need 7)")
                 continue
             try:
                 float(parts[0])
             except ValueError:
+                print(f"DEBUG: line {lineno} first field not a float: {parts[0]!r}")
                 continue
             yield parts
 
