@@ -49,10 +49,16 @@ def _engine(daily, lev=LEVERAGE, fee=0.0025, stop=STOP_FRAC, cash=100):
         if pos:
             st = entry*(1 - stop) if pos > 0 else entry*(1 + stop)
             if (pos > 0 and r.low <= st) or (pos < 0 and r.high >= st):
-                pnl = pos*(st - entry)
-                balance += pnl - abs(pnl)*fee
+                pnl_btc = pos*(st - entry)          # realised P&L (BTC)
+                bal_before = balance
+                balance += pnl_btc - abs(pnl_btc)*fee
+                ret_pct_tot = (balance/cash - 1)*100
+                pnl_pct = (pnl_btc / bal_before) * 100   # % vs balance before exit
+                print(f"{date.date()}  STOP  side={'LONG' if pos>0 else 'SHORT'}  "
+                      f"price={st:.2f}  pnl_btc={pnl_btc:+.4f}  pnl_pct={pnl_pct:+.2f}%  "
+                      f"bal={balance:.2f}  cum_ret={ret_pct_tot:+.2f}%")
                 trade_log.append({'date': date, 'side': 'STOP',
-                                  'price': st, 'pnl': pnl, 'balance': balance})
+                                  'price': st, 'pnl': pnl_btc, 'balance': balance})
                 pos = 0
                 trades += 1
 
@@ -63,11 +69,18 @@ def _engine(daily, lev=LEVERAGE, fee=0.0025, stop=STOP_FRAC, cash=100):
 
         # 3. enter / flip – LEVERAGE-sized
         if sig and balance > 0:
-            if pos:                         # close old
-                pnl = pos*(r.close - entry)
-                balance += pnl - abs(pnl)*fee
+            if pos:                         # close old position first
+                pnl_btc = pos*(r.close - entry)
+                bal_before = balance
+                balance += pnl_btc - abs(pnl_btc)*fee
+                ret_pct_tot = (balance/cash - 1)*100
+                pnl_pct = (pnl_btc / bal_before) * 100
+                print(f"{date.date()}  FLIP  side={'LONG' if pos>0 else 'SHORT'}->"
+                      f"{'LONG' if sig>0 else 'SHORT'}  price={r.close:.2f}  "
+                      f"pnl_btc={pnl_btc:+.4f}  pnl_pct={pnl_pct:+.2f}%  "
+                      f"bal={balance:.2f}  cum_ret={ret_pct_tot:+.2f}%")
                 trade_log.append({'date': date, 'side': 'EXIT',
-                                  'price': r.close, 'pnl': pnl, 'balance': balance})
+                                  'price': r.close, 'pnl': pnl_btc, 'balance': balance})
                 trades += 1
             notional = balance * lev
             max_size = notional / (r.close * (1 + fee))
@@ -80,10 +93,10 @@ def _engine(daily, lev=LEVERAGE, fee=0.0025, stop=STOP_FRAC, cash=100):
 
     # 4. final exit
     if pos:
-        pnl = pos*(daily['close'].iloc[-1] - entry)
-        balance += pnl - abs(pnl)*fee
+        pnl_btc = pos*(daily['close'].iloc[-1] - entry)
+        balance += pnl_btc - abs(pnl_btc)*fee
         trade_log.append({'date': daily.index[-1], 'side': 'FINAL_EXIT',
-                          'price': daily['close'].iloc[-1], 'pnl': pnl, 'balance': balance})
+                          'price': daily['close'].iloc[-1], 'pnl': pnl_btc, 'balance': balance})
         trades += 1
 
     return {'final': balance,
