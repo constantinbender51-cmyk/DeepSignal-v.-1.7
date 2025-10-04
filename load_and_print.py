@@ -62,10 +62,16 @@ def _engine(daily, lev=LEVERAGE, fee=0.0025, stop=STOP_FRAC, cash=100):
                 pos = 0
                 trades += 1
 
-        # 2. cross signal
+                # 2. cross signal
         cross_up = (r[fast_col] > r[slow_col]) and (prev_fast.iloc[i] <= prev_slow.iloc[i])
         cross_dn = (r[fast_col] < r[slow_col]) and (prev_fast.iloc[i] >= prev_slow.iloc[i])
         sig = 1 if cross_up else (-1 if cross_dn else 0)
+
+        # ✅ Print every crossover event
+        if cross_up or cross_dn:
+            print(f"{date.date()}  CROSS  {'BULL' if cross_up else 'BEAR'}  "
+                  f"fast={r[fast_col]:.2f}  slow={r[slow_col]:.2f}")
+        
 
         # 3. enter / flip – LEVERAGE-sized
         if sig and balance > 0:
