@@ -2,7 +2,7 @@
 import sys, re
 from pathlib import Path
 
-inf_re = re.compile(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\s+ $$inf$$ \s+')
+inf_re = re.compile(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\s+$$inf$$ \s+')
 
 def iter_results(path: Path):
     with path.open() as fh:
