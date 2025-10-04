@@ -5,10 +5,10 @@ import itertools, csv, os, time
 # ------------------------------------------------------------------
 # 0. USER CONTROLS – change these four lines only
 # ------------------------------------------------------------------
-FAST_MA = 200         # short / fast window
-SLOW_MA = 50          # long  / slow window
-LEVERAGE = 1.0        # desired leverage (e.g. 3×)
-STOP_FRAC = 1         # stop-loss fraction (e.g. 2 %  → 0.02)
+FAST_MA = 35         # short / fast window
+SLOW_MA = 190          # long  / slow window
+LEVERAGE = 4.0        # desired leverage (e.g. 3×)
+STOP_FRAC = 0.045         # stop-loss fraction (e.g. 2 %  → 0.02)
 
 # ------------------------------------------------------------------
 # 1. load hourly csv → daily candles + fast-/slow-MA
