@@ -7,7 +7,7 @@ from datetime import datetime
 FAST_MA   = 35
 SLOW_MA   = 190
 LEVERAGE  = 4.0
-STOP_FRAC = 0.055
+STOP_FRAC = 0.1
 
 # ------------------------------------------------------------------
 # 1. load hourly csv → daily candles + fast-/slow-MA
