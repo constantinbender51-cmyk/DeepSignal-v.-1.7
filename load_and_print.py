@@ -4,7 +4,7 @@ from datetime import datetime
 # ------------------------------------------------------------------
 # 0. USER CONTROLS – change these four lines only
 # ------------------------------------------------------------------
-FAST_MA   = 35
+FAST_MA   = 1
 SLOW_MA   = 190
 LEVERAGE  = 4.0
 STOP_FRAC = 0.2
